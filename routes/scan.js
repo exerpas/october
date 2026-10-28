@@ -1,9 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+const { HttpsProxyAgent } = require('https-proxy-agent'); // <-- LIBRERÍA DE PROXY
 
-const MAX_MATCHES = 500;             // Límite de ovejas coincidentes a encontrar
-const DELAY_BETWEEN_PROFILES = 350;  // Velocidad calibrada a 350ms para no alertar a Discord
+const MAX_MATCHES = 500;             
+const DELAY_BETWEEN_PROFILES = 350;  
 
 const DISCORD_FLAGS = {
     DISCORD_EMPLOYEE: 1 << 0,
@@ -39,7 +40,6 @@ function getCustomEmoji(badgeName) {
     return emojiMap[badgeName] || badgeName;
 }
 
-// Generar X-Super-Properties para camuflar el servidor de Render como app de escritorio
 const getSuperProperties = () => {
     return Buffer.from(JSON.stringify({
         "os": "Windows",
@@ -52,12 +52,21 @@ const getSuperProperties = () => {
     })).toString('base64');
 };
 
+// Petición de perfil enmascarada con Proxy
 async function fetchUserProfile(userId, headers) {
     let retries = 0;
+    
+    // Conectamos el Proxy desde Render
+    const proxyUrl = process.env.PROXY_URL;
+    const fetchOptions = { headers };
+    
+    if (proxyUrl) {
+        fetchOptions.agent = new HttpsProxyAgent(proxyUrl);
+    }
+
     while (retries < 3) {
         try {
-            // with_mutual_guilds=false acelera la respuesta del backend de Discord
-            const res = await fetch(`https://discord.com/api/v9/users/${userId}/profile?with_mutual_guilds=false`, { headers });
+            const res = await fetch(`https://discord.com/api/v9/users/${userId}/profile?with_mutual_guilds=false`, fetchOptions);
             
             if (res.status === 429) {
                 const data = await res.json().catch(() => ({}));
@@ -68,12 +77,13 @@ async function fetchUserProfile(userId, headers) {
             }
             
             if (!res.ok) {
-                console.error(`[Aviso Render] Discord denegó el perfil ${userId} con Status: ${res.status}. Posible bloqueo de IP.`);
+                console.error(`[Aviso Render/Proxy] Discord denegó el perfil ${userId} con Status: ${res.status}.`);
                 break;
             }
 
             return await res.json();
         } catch (e) {
+            console.error(`[Error Proxy/Red] ID ${userId}:`, e.message);
             break;
         }
     }
@@ -137,7 +147,7 @@ const handleScanRequest = async (req, res) => {
 
     res.json({ 
         status: 'started', 
-        message: `Buscando hasta ${MAX_MATCHES} cuentas filtradas a ${DELAY_BETWEEN_PROFILES}ms.` 
+        message: `Buscando hasta ${MAX_MATCHES} cuentas filtradas a ${DELAY_BETWEEN_PROFILES}ms con Bypass de IP.` 
     });
 
     executeStrictScan(token.trim(), serverId.trim(), webhookUrl.trim(), filters);
@@ -147,7 +157,6 @@ router.post('/start-scan', handleScanRequest);
 router.post('/api/start-scan', handleScanRequest);
 
 async function executeStrictScan(token, serverId, webhookUrl, filters) {
-    // Cabeceras robustas para engañar el escrutinio de centro de datos de Discord
     const headers = {
         'Authorization': token,
         'Content-Type': 'application/json',
