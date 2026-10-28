@@ -2,8 +2,8 @@ const express = require('express');
 const router = express.Router();
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
-const MAX_MATCHES = 500;             // Límite máximo de cuentas coincidentes
-const DELAY_BETWEEN_PROFILES = 750;  // Pausa en ms entre cada perfil (previene el error 429)
+const MAX_MATCHES = 500;             // Límite de ovejas coincidentes a encontrar
+const DELAY_BETWEEN_PROFILES = 350;  // Velocidad calibrada a 350ms para no alertar a Discord
 
 const DISCORD_FLAGS = {
     DISCORD_EMPLOYEE: 1 << 0,
@@ -39,28 +39,41 @@ function getCustomEmoji(badgeName) {
     return emojiMap[badgeName] || badgeName;
 }
 
-// Función de consulta con respaldo de reintento si salta un Rate Limit imprevisto
+// Generar X-Super-Properties para camuflar el servidor de Render como app de escritorio
+const getSuperProperties = () => {
+    return Buffer.from(JSON.stringify({
+        "os": "Windows",
+        "browser": "Discord Client",
+        "release_channel": "stable",
+        "client_version": "1.0.9015",
+        "os_version": "10.0.22631",
+        "os_arch": "x64",
+        "system_locale": "en-US"
+    })).toString('base64');
+};
+
 async function fetchUserProfile(userId, headers) {
     let retries = 0;
-    while (retries < 5) {
+    while (retries < 3) {
         try {
-            const res = await fetch(`https://discord.com/api/v9/users/${userId}/profile`, { headers });
+            // with_mutual_guilds=false acelera la respuesta del backend de Discord
+            const res = await fetch(`https://discord.com/api/v9/users/${userId}/profile?with_mutual_guilds=false`, { headers });
             
             if (res.status === 429) {
                 const data = await res.json().catch(() => ({}));
-                const waitTime = (data.retry_after ? data.retry_after * 1000 : 3500) + 500;
-                console.log(`[Rate Limit 429] Pausa de seguridad: esperando ${Math.round(waitTime)}ms para perfil ID: ${userId}...`);
+                const waitTime = (data.retry_after ? data.retry_after * 1000 : 2500) + 200;
                 await new Promise(r => setTimeout(r, waitTime));
                 retries++;
                 continue;
             }
             
-            if (res.ok) {
-                return await res.json();
+            if (!res.ok) {
+                console.error(`[Aviso Render] Discord denegó el perfil ${userId} con Status: ${res.status}. Posible bloqueo de IP.`);
+                break;
             }
-            break;
+
+            return await res.json();
         } catch (e) {
-            console.error(`[Error Profile Fetch] ID ${userId}:`, e.message);
             break;
         }
     }
@@ -68,19 +81,17 @@ async function fetchUserProfile(userId, headers) {
 }
 
 function calculateNitroTier(profileData) {
-    if (!profileData) return null;
+    if (!profileData || Object.keys(profileData).length === 0) return null;
 
     let premiumDate = null;
+    const badges = profileData.badges || [];
 
-    // 1. Lectura directa desde el campo premium_since
     if (profileData.premium_since) {
         premiumDate = new Date(profileData.premium_since);
     } else if (profileData.user && profileData.user.premium_since) {
         premiumDate = new Date(profileData.user.premium_since);
     }
 
-    // 2. Extraer fecha desde la descripción de la insignia de Nitro
-    const badges = profileData.badges || [];
     if (!premiumDate && badges.length > 0) {
         const premiumBadge = badges.find(b => 
             (b.id && (b.id.toLowerCase().includes('premium') || b.id.toLowerCase().includes('nitro'))) ||
@@ -126,7 +137,7 @@ const handleScanRequest = async (req, res) => {
 
     res.json({ 
         status: 'started', 
-        message: `Escaneo progresivo iniciado. Velocidad calibrada (${DELAY_BETWEEN_PROFILES}ms/perfil) para evitar Rate Limit.` 
+        message: `Buscando hasta ${MAX_MATCHES} cuentas filtradas a ${DELAY_BETWEEN_PROFILES}ms.` 
     });
 
     executeStrictScan(token.trim(), serverId.trim(), webhookUrl.trim(), filters);
@@ -136,14 +147,16 @@ router.post('/start-scan', handleScanRequest);
 router.post('/api/start-scan', handleScanRequest);
 
 async function executeStrictScan(token, serverId, webhookUrl, filters) {
+    // Cabeceras robustas para engañar el escrutinio de centro de datos de Discord
     const headers = {
         'Authorization': token,
         'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/1.0.9015 Chrome/120.0.6099.291 Electron/28.2.10 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/1.0.9015 Chrome/120.0.6099.291 Electron/28.2.10 Safari/537.36',
+        'X-Super-Properties': getSuperProperties(),
+        'Accept-Language': 'en-US,en;q=0.9'
     };
 
     try {
-        console.log(`[October Scan] Conectando al servidor ID: ${serverId}...`);
         const channelsRes = await fetch(`https://discord.com/api/v9/guilds/${serverId}/channels`, { headers });
 
         if (!channelsRes.ok) {
@@ -153,9 +166,9 @@ async function executeStrictScan(token, serverId, webhookUrl, filters) {
 
         const channels = await channelsRes.json();
         const textChannels = channels.filter(c => c.type === 0);
-        console.log(`[October Scan] ${textChannels.length} canales detectados. Escaneando usuarios...`);
+        console.log(`[October Scan] Detectados ${textChannels.length} canales. Descartando ovejas sin filtros...`);
 
-        const scannedUserIds = new Set(); // Conjunto para descartar duplicados ("descartar ovejas")
+        const scannedUserIds = new Set();
         let matchCount = 0;
 
         for (const channel of textChannels) {
@@ -181,14 +194,11 @@ async function executeStrictScan(token, serverId, webhookUrl, filters) {
 
                         const userId = msg.author.id;
 
-                        // Descarte de duplicados
                         if (scannedUserIds.has(userId)) continue;
                         scannedUserIds.add(userId);
 
-                        // Pausa de velocidad reducida entre cada perfil
                         await new Promise(r => setTimeout(r, DELAY_BETWEEN_PROFILES));
 
-                        // Obtención segura del perfil completo
                         const profileData = await fetchUserProfile(userId, headers);
                         const targetUser = profileData.user || msg.author;
                         const publicFlags = targetUser.public_flags || msg.author.public_flags || targetUser.flags || 0;
@@ -225,8 +235,7 @@ async function executeStrictScan(token, serverId, webhookUrl, filters) {
                             }
                         }
 
-                        // Descarte de cuentas no coincidentes
-                        if (!matchesSearch) continue;
+                        if (!matchesSearch) continue; // Descartar cuenta si no cumple el filtro
 
                         matchCount++;
                         console.log(`[MATCH #${matchCount}/${MAX_MATCHES}] Usuario: ${targetUser.username} -> Nitro Tier: ${exactTier || 'None'}`);
@@ -280,11 +289,9 @@ async function executeStrictScan(token, serverId, webhookUrl, filters) {
                     }
                     lastMessageId = messages[messages.length - 1].id;
                 }
-            } catch (e) {
-                console.error(`[Error Canal] ID ${channel.id}:`, e.message);
-            }
+            } catch (e) {}
         }
-        console.log(`[October Scan] Búsqueda finalizada. Se enviaron ${matchCount} resultado(s) a la webhook.`);
+        console.log(`[October Scan] Búsqueda finalizada. ${matchCount} ovejas capturadas y enviadas.`);
     } catch (err) {
         console.error('Error general en el escaneo:', err);
     }
