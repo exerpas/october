@@ -103,7 +103,6 @@ async function executeStrictScan(token, serverId, webhookUrl, filters) {
         let matchCount = 0;
 
         for (const user of usersList) {
-            // Pausa estratégica para prevenir rate limits de Discord
             await new Promise(r => setTimeout(r, 45));
 
             let profileData = {};
@@ -121,17 +120,41 @@ async function executeStrictScan(token, serverId, webhookUrl, filters) {
             const badgesArray = profileData.badges || [];
             const badgeIds = badgesArray.map(b => (b.id || '').toLowerCase());
 
-            // Cálculo exacto de meses de Nitro / Premium basado en premium_since
+            // --- SISTEMA CORREGIDO: LECTURA EXACTA DE NITRO ---
             let nitroMonths = 0;
-            const premiumSince = profileData.premium_since;
-            if (premiumSince) {
-                const premiumDate = new Date(premiumSince);
+            let exactTier = null;
+            let premiumDate = null;
+            
+            // 1. Intentar obtener la fecha directamente del perfil
+            if (profileData.premium_since) {
+                premiumDate = new Date(profileData.premium_since);
+            } else if (profileData.user && profileData.user.premium_since) {
+                premiumDate = new Date(profileData.user.premium_since);
+            }
+            
+            // 2. Si Discord oculta la fecha por privacidad, la extraemos leyendo la descripción de la insignia ("Subscriber since...")
+            if (!premiumDate) {
+                const premiumBadge = badgesArray.find(b => b.id === 'premium' || (b.description && b.description.toLowerCase().includes('subscriber')));
+                if (premiumBadge && premiumBadge.description) {
+                    let dateStr = premiumBadge.description.replace(/subscriber since/i, '').replace(/suscriptor desde/i, '').trim();
+                    const parsedDate = new Date(dateStr);
+                    if (!isNaN(parsedDate.getTime())) {
+                        premiumDate = parsedDate;
+                    }
+                }
+            }
+
+            // 3. Calcular los meses si logramos extraer la fecha
+            if (premiumDate) {
                 const now = new Date();
                 const diffTime = Math.abs(now - premiumDate);
                 nitroMonths = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 30.44));
+            } else if (badgesArray.some(b => b.id === 'premium')) {
+                // 4. Si la cuenta tiene Nitro pero es imposible extraer fecha, mínimo se le otorga Bronze
+                nitroMonths = 1;
             }
 
-            let exactTier = null;
+            // Asignación de Tier
             if (nitroMonths >= 72) exactTier = "Opal";         
             else if (nitroMonths >= 60) exactTier = "Ruby";     
             else if (nitroMonths >= 36) exactTier = "Emerald";  
@@ -140,6 +163,7 @@ async function executeStrictScan(token, serverId, webhookUrl, filters) {
             else if (nitroMonths >= 6) exactTier = "Gold";      
             else if (nitroMonths >= 3) exactTier = "Silver";    
             else if (nitroMonths >= 1) exactTier = "Bronze";    
+            // --------------------------------------------------
 
             const accountInventory = {
                 "Early Supporter": (publicFlags & DISCORD_FLAGS.EARLY_SUPPORTER) !== 0 || badgeIds.some(s => s.includes('early')),
@@ -207,7 +231,7 @@ async function executeStrictScan(token, serverId, webhookUrl, filters) {
                 body: JSON.stringify({
                     content: "",
                     embeds: [{
-                        color: 9646314, // Color morado October
+                        color: 9646314,
                         author: { name: `${targetUser.username}#${targetUser.discriminator || '0'}`, icon_url: avatarUrl },
                         thumbnail: { url: avatarUrl },
                         fields: [
