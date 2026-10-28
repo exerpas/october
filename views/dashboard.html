@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Panel principal</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100">
+  <header class="border-b border-slate-800 bg-slate-900/60">
+    <div class="mx-auto flex max-w-3xl items-center justify-between px-4 py-4">
+      <h1 class="text-lg font-semibold">Panel principal</h1>
+      <button id="logout" class="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800">Cerrar sesión</button>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-3xl space-y-6 px-4 py-8">
+    <form id="panel-form" class="space-y-6 rounded-2xl border border-slate-800 bg-slate-900/70 p-6 shadow-xl">
+      <section class="grid gap-4 sm:grid-cols-2">
+        <div class="sm:col-span-2">
+          <label class="mb-1 block text-sm font-medium text-slate-300" for="credential">Credencial</label>
+          <input id="credential" name="credential" type="password" autocomplete="off" required
+            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30" />
+        </div>
+        <div>
+          <label class="mb-1 block text-sm font-medium text-slate-300" for="resourceId">ID de recurso</label>
+          <input id="resourceId" name="resourceId" type="text" required
+            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30" />
+        </div>
+        <div>
+          <label class="mb-1 block text-sm font-medium text-slate-300" for="channel">Canal</label>
+          <input id="channel" name="channel" type="text" required
+            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30" />
+        </div>
+        <div class="sm:col-span-2">
+          <label class="mb-1 block text-sm font-medium text-slate-300" for="webhookUrl">Webhook URL <span class="text-slate-500">(opcional)</span></label>
+          <input id="webhookUrl" name="webhookUrl" type="url" placeholder="https://"
+            class="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30" />
+        </div>
+      </section>
+
+      <section class="space-y-4 rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Opciones de filtrado</h2>
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label class="mb-1 block text-sm font-medium text-slate-300" for="mode">Modo</label>
+            <select id="mode" class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm outline-none focus:border-indigo-500">
+              <option value="none">Sin filtro</option>
+              <option value="include">Incluir coincidencias</option>
+              <option value="exclude">Excluir coincidencias</option>
+            </select>
+          </div>
+          <div>
+            <label class="mb-1 block text-sm font-medium text-slate-300" for="maxItems">Máximo de elementos</label>
+            <input id="maxItems" type="number" min="1" max="1000" value="100"
+              class="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-2.5 text-sm outline-none focus:border-indigo-500" />
+          </div>
+          <div class="sm:col-span-2">
+            <label class="mb-1 block text-sm font-medium text-slate-300" for="keywords">Palabras clave <span class="text-slate-500">(separadas por coma)</span></label>
+            <input id="keywords" type="text" placeholder="ej. alpha, beta, gamma"
+              class="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-2.5 text-sm outline-none focus:border-indigo-500" />
+          </div>
+          <label class="flex items-center gap-2 text-sm text-slate-300 sm:col-span-2">
+            <input id="onlyActive" type="checkbox" class="h-4 w-4 rounded border-slate-600 bg-slate-900 text-indigo-600" />
+            Solo elementos activos
+          </label>
+        </div>
+      </section>
+
+      <p id="message" class="hidden rounded-lg px-3 py-2 text-sm"></p>
+
+      <button id="send" type="submit" class="w-full rounded-lg bg-indigo-600 px-4 py-2.5 font-medium text-white transition hover:bg-indigo-500 disabled:opacity-50">
+        Enviar
+      </button>
+    </form>
+
+    <section id="result-card" class="hidden rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
+      <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">Respuesta del servidor</h2>
+      <pre id="result" class="overflow-x-auto rounded-lg bg-slate-950 p-4 text-xs text-emerald-300"></pre>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const form = $('panel-form');
+    const message = $('message');
+
+    function showMessage(text, ok) {
+      message.textContent = text;
+      message.className = 'rounded-lg px-3 py-2 text-sm ' + (ok ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400');
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      message.classList.add('hidden');
+      $('send').disabled = true;
+
+      const payload = {
+        credential: $('credential').value,
+        resourceId: $('resourceId').value,
+        channel: $('channel').value,
+        webhookUrl: $('webhookUrl').value,
+        filters: {
+          mode: $('mode').value,
+          keywords: $('keywords').value,
+          onlyActive: $('onlyActive').checked,
+          maxItems: $('maxItems').value,
+        },
+      };
+
+      try {
+        const res = await fetch('/api/panel/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 401) { window.location.href = '/'; return; }
+        if (!res.ok) throw new Error(data.error || 'Error al enviar');
+        showMessage('Datos enviados correctamente', true);
+        $('result').textContent = JSON.stringify(data, null, 2);
+        $('result-card').classList.remove('hidden');
+      } catch (err) {
+        showMessage(err.message, false);
+      } finally {
+        message.classList.remove('hidden');
+        $('send').disabled = false;
+      }
+    });
+
+    $('logout').addEventListener('click', async () => {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      window.location.href = '/';
+    });
+  </script>
+</body>
+</html>

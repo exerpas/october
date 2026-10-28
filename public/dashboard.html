@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>October — Operations Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background-color: #08080a;
+            color: #f4f4f5;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            overflow-x: hidden;
+        }
+        .font-mono-brand {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        input, textarea {
+            user-select: text;
+            -webkit-user-select: text;
+        }
+        .neon-box {
+            background: rgba(12, 12, 16, 0.92);
+            border: 1px solid rgba(168, 85, 247, 0.38);
+            box-shadow: 0 0 50px -5px rgba(168, 85, 247, 0.3), 0 25px 50px -12px rgba(0, 0, 0, 0.95);
+        }
+        .badge-card {
+            background: rgba(18, 18, 24, 0.85);
+            border: 1px solid rgba(168, 85, 247, 0.2);
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+        .badge-card:hover {
+            border-color: rgba(168, 85, 247, 0.6);
+            background: rgba(26, 26, 36, 0.95);
+        }
+        .badge-card.selected {
+            border-color: rgba(168, 85, 247, 0.95);
+            background: rgba(168, 85, 247, 0.16);
+            box-shadow: 0 0 15px rgba(168, 85, 247, 0.2);
+        }
+
+        /* Checkbox Neón Personalizado */
+        .custom-checkbox {
+            appearance: none;
+            -webkit-appearance: none;
+            width: 1.2rem;
+            height: 1.2rem;
+            border: 1.5px solid rgba(168, 85, 247, 0.4);
+            border-radius: 0.35rem;
+            background: rgba(10, 10, 14, 0.9);
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+        .badge-card.selected .custom-checkbox {
+            background: #9333ea;
+            border-color: #c084fc;
+            box-shadow: 0 0 10px rgba(168, 85, 247, 0.8);
+        }
+        .badge-card.selected .custom-checkbox::after {
+            content: "";
+            width: 0.35rem;
+            height: 0.7rem;
+            border: solid #ffffff;
+            border-width: 0 2px 2px 0;
+            transform: rotate(45deg);
+            margin-bottom: 2px;
+        }
+
+        /* Lluvia de Criptomonedas Neón */
+        #crypto-rain-container {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            z-index: 0;
+            overflow: hidden;
+        }
+        .crypto-icon {
+            position: absolute;
+            top: -80px;
+            color: #c084fc;
+            filter: drop-shadow(0 0 8px rgba(168, 85, 247, 0.8)) drop-shadow(0 0 18px rgba(168, 85, 247, 0.4));
+            opacity: 0.25;
+            animation: fall-down linear infinite;
+        }
+        @keyframes fall-down {
+            0% { transform: translateY(0) rotate(0deg); opacity: 0; }
+            15% { opacity: 0.35; }
+            85% { opacity: 0.35; }
+            100% { transform: translateY(115vh) rotate(360deg); opacity: 0; }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-start antialiased selection:bg-purple-950 selection:text-purple-200 relative py-8 px-6">
+    
+    <div id="crypto-rain-container"></div>
+
+    <!-- Barra Superior -->
+    <header class="w-full max-w-7xl relative z-10 flex items-center justify-between pb-6 border-b border-zinc-800/80 mb-8">
+        <div class="flex items-center gap-3">
+            <h1 class="font-mono-brand text-base font-semibold tracking-[0.45em] text-zinc-100">OCTOBER</h1>
+            <span class="text-xs font-mono-brand uppercase px-3 py-1 rounded-full bg-purple-950/80 text-purple-300 border border-purple-500/40">Private Dashboard</span>
+        </div>
+        <div class="flex items-center gap-5">
+            <span id="sessionStatusDisplay" class="text-xs font-mono-brand text-zinc-300 flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                Active Session
+            </span>
+            <button onclick="logout()" class="text-xs font-mono-brand text-zinc-400 hover:text-rose-400 transition-colors uppercase tracking-wider font-semibold">
+                [ Exit ]
+            </button>
+        </div>
+    </header>
+
+    <!-- Contenedor Principal (2 Columnas) -->
+    <main class="w-full max-w-7xl relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 mb-8">
+        
+        <!-- Columna Izquierda: Entradas + Terminal + Botón -->
+        <div class="lg:col-span-5 space-y-6">
+            
+            <div class="neon-box rounded-3xl p-7 backdrop-blur-2xl space-y-5">
+                <h2 class="text-sm font-mono-brand uppercase tracking-wider text-purple-400 font-semibold flex items-center gap-2.5">
+                    <svg class="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M11.42 15.17L17.25 21A2.25 2.25 0 0021 17.25l-5.83-5.83m-3.75 3.75l-3.75-3.75a3 3 0 114.24-4.24l3.75 3.75m-3.75 3.75l3.75 3.75"></path>
+                    </svg>
+                    Enter information below
+                </h2>
+
+                <div>
+                    <label class="block text-xs font-mono-brand uppercase text-zinc-300 mb-2 font-medium">Access Token (User Token)</label>
+                    <input type="text" id="accessTokenInput" placeholder="Enter Discord user token..." class="w-full bg-zinc-900/90 border border-zinc-700/80 rounded-xl px-4 py-3.5 text-sm font-mono-brand text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-purple-500">
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-mono-brand uppercase text-zinc-300 mb-2 font-medium">Server ID</label>
+                        <input type="text" id="serverIdInput" placeholder="e.g. 1234567890" class="w-full bg-zinc-900/90 border border-zinc-700/80 rounded-xl px-4 py-3.5 text-sm font-mono-brand text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-purple-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-mono-brand uppercase text-zinc-300 mb-2 font-medium">Channel ID</label>
+                        <input type="text" id="channelIdInput" placeholder="e.g. 9876543210" class="w-full bg-zinc-900/90 border border-zinc-700/80 rounded-xl px-4 py-3.5 text-sm font-mono-brand text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-purple-500">
+                    </div>
+                </div>
+
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="block text-xs font-mono-brand uppercase text-zinc-300 font-medium">Discord Webhook URL</label>
+                        <button id="testWebhookBtn" class="text-[10px] font-mono-brand uppercase px-2.5 py-1 rounded-lg bg-purple-950/80 hover:bg-purple-900 text-purple-300 border border-purple-500/40 transition-colors font-semibold">
+                            [ Test Webhook ]
+                        </button>
+                    </div>
+                    <input type="text" id="webhookInput" placeholder="https://discord.com/api/webhooks/..." class="w-full bg-zinc-900/90 border border-zinc-700/80 rounded-xl px-4 py-3.5 text-sm font-mono-brand text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-purple-500">
+                </div>
+            </div>
+
+            <div class="neon-box rounded-3xl p-7 backdrop-blur-2xl space-y-5">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-mono-brand uppercase tracking-wider text-zinc-300 font-semibold">Live Execution Terminal</span>
+                    <span id="terminalStatusBadge" class="text-xs font-mono-brand text-purple-400 font-semibold">[Idle]</span>
+                </div>
+                
+                <div id="terminalConsole" class="w-full h-48 bg-zinc-950/95 border border-zinc-800 rounded-2xl p-4 font-mono-brand text-xs text-zinc-200 overflow-y-auto space-y-2 selection:bg-purple-900">
+                    <p class="text-zinc-500">// October Scanner Engine v1.2</p>
+                    <p class="text-zinc-400">[System] Ready for configuration input...</p>
+                </div>
+
+                <div class="space-y-3">
+                    <button id="startScanBtn" class="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs py-4 rounded-2xl transition-all shadow-lg shadow-purple-600/30 active:scale-[0.99] font-mono-brand uppercase tracking-wider">
+                        Ready when you are — Start Scan
+                    </button>
+                    <button id="stopScanBtn" class="w-full bg-zinc-900 hover:bg-rose-950/80 text-rose-400 font-semibold text-xs py-3.5 rounded-2xl transition-all border border-zinc-800 hover:border-rose-500/40 font-mono-brand uppercase tracking-wider hidden">
+                        Stop Scan
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Columna Derecha: Filtros de Badges -->
+        <div class="lg:col-span-7 space-y-5">
+            
+            <div class="neon-box rounded-2xl p-5 flex items-center justify-between backdrop-blur-2xl">
+                <div class="flex items-center gap-3.5">
+                    <span id="selectedCount" class="text-xs font-mono-brand font-semibold px-3.5 py-1.5 rounded-lg bg-purple-950 text-purple-300 border border-purple-500/40">0 selected</span>
+                    <h2 class="text-xs font-mono-brand uppercase tracking-wider text-zinc-200 font-semibold">Target Badges Filter</h2>
+                </div>
+                <div class="flex items-center gap-2.5">
+                    <button id="selectAllBtn" class="text-xs font-mono-brand uppercase px-3.5 py-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-200 font-medium transition-colors">Select all</button>
+                    <button id="clearAllBtn" class="text-xs font-mono-brand uppercase px-3.5 py-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-zinc-400 hover:text-zinc-100 font-medium transition-colors">Clear</button>
+                </div>
+            </div>
+
+            <!-- BOOST BADGES -->
+            <div class="neon-box rounded-3xl p-6 backdrop-blur-2xl">
+                <button id="toggleBoostBtn" class="w-full flex items-center justify-between text-left focus:outline-none group">
+                    <div class="flex items-center gap-2.5">
+                        <span class="text-xs font-mono-brand uppercase tracking-widest text-purple-400 font-bold">// Boost Badges</span>
+                        <span class="text-xs font-mono-brand text-zinc-400 font-medium" id="boostCountBadge">(8 available)</span>
+                    </div>
+                    <div class="flex items-center gap-2 text-zinc-400 group-hover:text-purple-300 transition-colors">
+                        <span class="text-xs font-mono-brand uppercase font-medium" id="boostStatusText">Toggle</span>
+                        <svg id="boostArrow" class="w-4 h-4 transform transition-transform duration-200 rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>
+                    </div>
+                </button>
+
+                <div id="boostContent" class="grid grid-cols-1 sm:grid-cols-2 gap-3.5 mt-5">
+                    <div class="badge-card rounded-2xl p-3.5 flex items-center justify-between" data-badge="Bronze">
+                        <div class="flex items-center gap-3.5 pointer-events-none">
+                            <div class="w-9 h-9 rounded-xl bg-amber-950/40 border border-amber-800/40 flex items-center justify-center overflow-hidden">
+                                <img src="/assets/bronze.png" class="w-6 h-6 object-contain">
+                            </div>
+                            <p class="text-xs font-semibold text-zinc-100">Bronze</p>
+                        </div>
+                        <input type="checkbox" class="badge-checkbox custom-checkbox">
+                    </div>
+
+                    <div class="badge-card rounded-2xl p-3.5 flex items-center justify-between" data-badge="Silver">
+                        <div class="flex items-center gap-3.5 pointer-events-none">
+                            <div class="w-9 h-9 rounded-xl bg-slate-800/50 border border-slate-600/40 flex items-center justify-center overflow-hidden">
+                                <img src="/assets/silver.png" class="w-6 h-6 object-contain">
+                            </div>
+                            <p class="text-xs font-semibold text-zinc-100">Silver</p>
+                        </div>
+                        <input type="checkbox" class="badge-checkbox custom-checkbox">
+                    </div>
+
+                    <div class="badge-card rounded-2xl p-3.5 flex items-center justify-between" data-badge="Gold">
+                        <div class="flex items-center gap-3.5 pointer-events-none">
+                            <div class="w-9 h-9 rounded-xl bg-yellow-950/40 border border-yellow-600/40 flex items-center justify-center overflow-hidden">
+                                <img src="/assets/gold.png" class="w-6 h-6 object-contain">
+                            </div>
+                            <p class="text-xs font-semibold text-zinc-100">Gold</p>
+                        </div>
+                        <input type="checkbox" class="badge-checkbox custom-checkbox">
+                    </div>
+
+                    <div class="badge-card rounded-2xl p-3.5 flex items-center justify-between" data-badge="Platinum">
+                        <div class="flex items-center gap-3.5 pointer-events-none">
+                            <div class="w-9 h-9 rounded-xl bg-blue-900/40 border border-blue-500/30 flex items-center justify-center overflow-hidden">
+                                <img src="/assets/platinum.png" class="w-6 h-6 object-contain">
+                            </div>
+                            <p class="text-xs font-semibold text-zinc-100">Platinum</p>
+                        </div>
+                        <input type="checkbox" class="badge-checkbox custom-checkbox">
+                    </div>
+
+                    <div class="badge-card rounded-2xl p-3.5 flex items-center justify-between" data-badge="Diamond">
+                        <div class="flex items-center gap-3.5 pointer-events-none">
+                            <div class="w-9 h-9 rounded-xl bg-indigo-900/40 border border-indigo-500/30 flex items-center justify-center overflow-hidden">
+                                <img src="/assets/diamond.png" class="w-6 h-6 object-contain">
+                            </div>
+                            <p class="text-xs font-semibold text-zinc-100">Diamond</p>
+                        </div>
+                        <input type="checkbox" class="badge-checkbox custom-checkbox">
+                    </div>
+
+                    <div class="badge-card rounded-2xl p-3.5 flex items-center justify-between" data-badge="Emerald">
+                        <div class="flex items-center gap-3.5 pointer-events-none">
+                            <div class="w-9 h-9 rounded-xl bg-emerald-900/40 border border-emerald-500/30 flex items-center justify-center overflow-hidden">
+                                <img src="/assets/emerald.png" class="w-6 h-6 object-contain">
+                            </div>
+                            <p class="text-xs font-semibold text-zinc-100">Emerald</p>
+                        </div>
+                        <input type="checkbox" class="badge-checkbox custom-checkbox">
+                    </div>
+
+                    <div class="badge-card rounded-2xl p-3.5 flex items-center justify-between" data-badge="Ruby">
+                        <div class="flex items-center gap-3.5 pointer-events-none">
+                            <div class="w-9 h-9 rounded-xl bg-rose-900/40 border border-rose-500/30 flex items-center justify-center overflow-hidden">
+                                <img src="/assets/ruby.png" class="w-6 h-6 object-contain">
+                            </div>
+                            <p class="text-xs font-semibold text-zinc-100">Ruby</p>
+                        </div>
+                        <input type="checkbox" class="badge-checkbox custom-checkbox">
+                    </div>
+
+                    <div class="badge-card rounded-2xl p-3.5 flex items-center justify-between" data-badge="Opal">
+                        <div class="flex items-center gap-3.5 pointer-events-none">
+                            <div class="w-9 h-9 rounded-xl bg-cyan-900/40 border border-cyan-500/30 flex items-center justify-center overflow-hidden">
+                                <img src="/assets/opal.png" class="w-6 h-6 object-contain">
+                            </div>
+                            <p class="text-xs font-semibold text-zinc-100">Opal</p>
+                        </div>
+                        <input type="checkbox" class="badge-checkbox custom-checkbox">
+                    </div>
+                </div>
+            </div>
+
+            <!-- SPECIAL BADGES -->
+            <div class="neon-box rounded-3xl p-6 backdrop-blur-2xl">
+                <button id="toggleSpecialBtn" class="w-full flex items-center justify-between text-left focus:outline-none group">
+                    <div class="flex items-center gap-2.5">
+                        <span class="text-xs font-mono-brand uppercase tracking-widest text-purple-400 font-bold">// Special Badges</span>
+                        <span class="text-xs font-mono-brand text-zinc-400 font-medium" id="specialCountBadge">(8 available)</span>
+                    </div>
+                    <div class="flex items-center gap-2 text-zinc-400 group-hover:text-purple-300 transition-colors">
+                        <span class="text-xs font-mono-brand uppercase font-medium" id="specialStatusText">Toggle</span>
+                        <svg id="specialArrow" class="w-4 h-4 transform transition-transform duration-200 rotate-180" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5"/></svg>
+                    </div>
+                </button>
+
+                <div id="specialContent" class="grid grid-cols-1 sm:grid-cols-2 gap-3.5 mt-5">
+                    <div class="badge-card rounded-2xl p-3.5 flex items-center justify-between" data-badge="Bot Developer">
+                        <div class="flex items-center gap-3.5 pointer-events-none">
+                            <div class="w-9 h-9 rounded-xl bg-purple-900/30 border border-purple-500/30 flex items-center justify-center overflow-hidden">
+                                <img src="/assets/botdev.png" class="w-6 h-6 object-contain">
+                            </div>
+                            <p class="text-xs font-semibold text-zinc-100">Bot Developer</p>
+                        </div>
+                        <input type="checkbox" class="badge-checkbox custom-checkbox">
+                    </div>
+
+                    <div class="badge-card rounded-2xl p-3.5 flex items-center justify-between" data-badge="Bug Hunter Level 1">
+                        <div class="flex items-center gap-3.5 pointer-events-none">
+                            <div class="w-9 h-9 rounded-xl bg-rose-900/30 border border-rose-500/30 flex items-center justify-center overflow-hidden">
+                                <img src="/assets/bughunter1.png" class="w-6 h-6 object-contain">
+                            </div>
+                            <p class="text-xs font-semibold text-zinc-100">Bug Hunter Level 1</p>
+                        </div>
+                        <input type="checkbox" class="badge-checkbox custom-checkbox">
+                    </div>
+
+                    <div class="badge-card rounded-2xl p-3.5 flex items-center justify-between" data-badge="Bug Hunter Level 2">
+                        <div class="flex items-center gap-3.5 pointer-events-none">
+                            <div class="w-9 h-9 rounded-xl bg-amber-900/30 border border-amber-500/30 flex items-center justify-center overflow-hidden">
+                                <img src="/assets/bughunter2.png" class="w-6 h-6 object-contain">
+                            </div>
+                            <p class="text-xs font-semibold text-zinc-100">Bug Hunter Level 2</p>
+                        </div>
+                        <input type="checkbox" class="badge-checkbox custom-checkbox">
+                    </div>
+
+                    <div class="badge-card rounded-2xl p-3.5 flex items-center justify-between" data-badge="Early Supporter">
+                        <div class="flex items-center gap-3.5 pointer-events-none">
+                            <div class="w-9 h-9 rounded-xl bg-amber-900/30 border border-amber-500/30 flex items-center justify-center overflow-hidden">
+                                <img src="/assets/early.png" class="w-6 h-6 object-contain">
+                            </div>
+                            <p class="text-xs font-semibold text-zinc-100">Early Supporter</p>
+                        </div>
+                        <input type="checkbox" class="badge-checkbox custom-checkbox">
+                    </div>
+
+                    <div class="badge-card rounded-2xl p-3.5 flex items-center justify-between" data-badge="Alumni">
+                        <div class="flex items-center gap-3.5 pointer-events-none">
+                            <div class="w-9 h-9 rounded-xl bg-cyan-900/30 border border-cyan-500/30 flex items-center justify-center overflow-hidden">
+                                <img src="/assets/alumni.png" class="w-6 h-6 object-contain">
+                            </div>
+                            <p class="text-xs font-semibold text-zinc-100">Alumni</p>
+                        </div>
+                        <input type="checkbox" class="badge-checkbox custom-checkbox">
+                    </div>
+
+                    <div class="badge-card rounded-2xl p-3.5 flex items-center justify-between" data-badge="Partner">
+                        <div class="flex items-center gap-3.5 pointer-events-none">
+                            <div class="w-9 h-9 rounded-xl bg-indigo-900/30 border border-indigo-500/30 flex items-center justify-center overflow-hidden">
+                                <img src="/assets/partner.png" class="w-6 h-6 object-contain">
+                            </div>
+                            <p class="text-xs font-semibold text-zinc-100">Partner</p>
+                        </div>
+                        <input type="checkbox" class="badge-checkbox custom-checkbox">
+                    </div>
+
+                    <div class="badge-card rounded-2xl p-3.5 flex items-center justify-between" data-badge="Discord Staff">
+                        <div class="flex items-center gap-3.5 pointer-events-none">
+                            <div class="w-9 h-9 rounded-xl bg-blue-900/30 border border-blue-500/30 flex items-center justify-center overflow-hidden">
+                                <img src="/assets/staff.png" class="w-6 h-6 object-contain">
+                            </div>
+                            <p class="text-xs font-semibold text-zinc-100">Discord Staff</p>
+                        </div>
+                        <input type="checkbox" class="badge-checkbox custom-checkbox">
+                    </div>
+
+                    <div class="badge-card rounded-2xl p-3.5 flex items-center justify-between" data-badge="HypeSquad Events">
+                        <div class="flex items-center gap-3.5 pointer-events-none">
+                            <div class="w-9 h-9 rounded-xl bg-red-900/30 border border-red-500/30 flex items-center justify-center overflow-hidden">
+                                <img src="/assets/hse.png" class="w-6 h-6 object-contain">
+                            </div>
+                            <p class="text-xs font-semibold text-zinc-100">HypeSquad Events</p>
+                        </div>
+                        <input type="checkbox" class="badge-checkbox custom-checkbox">
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <script>
+        const sessionStatusDisplay = document.getElementById('sessionStatusDisplay');
+        let activeSession = JSON.parse(localStorage.getItem('october_active_session'));
+
+        if (!activeSession) {
+            const storedKeys = JSON.parse(localStorage.getItem('october_keys')) || [];
+            const firstActive = storedKeys.find(k => k.status === 'ACTIVE');
+            activeSession = {
+                duration: firstActive ? firstActive.duration : '7 Days'
+            };
+        }
+
+        if (activeSession && activeSession.duration) {
+            const dur = activeSession.duration.toLowerCase();
+            let labelText = '';
+
+            if (dur.includes('365') || dur.includes('lifetime')) {
+                labelText = 'Lifetime';
+            } else if (dur.includes('30') || dur.includes('month')) {
+                labelText = 'Time left: 30 days';
+            } else if (dur.includes('7')) {
+                labelText = 'Time left: 7 days';
+            } else if (dur.includes('1') || dur.includes('day')) {
+                labelText = 'Time left: 1 day';
+            } else {
+                labelText = `Time left: ${activeSession.duration}`;
+            }
+
+            sessionStatusDisplay.innerHTML = `
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                ${labelText}
+            `;
+        }
+
+        function logout() {
+            localStorage.removeItem('october_active_session');
+            window.location.href = '/index.html';
+        }
+
+        // Lluvia Neón
+        const cryptoSVGs = [
+            `<svg class="w-full h-full" viewBox="0 0 24 24" fill="currentColor"><path d="M23.638 14.904c-1.602 6.43-8.113 10.34-14.542 8.736C2.67 22.05-1.24 15.538.362 9.11 1.962 2.67 8.475-1.24 14.902.362c6.43 1.605 10.342 8.115 8.736 14.542zM15.706 9.873c.257-1.72-1.054-2.646-2.846-3.262l.582-2.334-1.422-.355-.567 2.272c-.373-.093-.757-.18-1.138-.266l.57-2.285-1.423-.355-.582 2.333c-.31-.07-.614-.14-.908-.214l.002-.007-1.963-.49-.378 1.52s1.056.242 1.034.257c.577.144.68.526.663.829l-.665 2.668c.04.01.09.025.147.048l-.15-.037-.932 3.738c-.07.174-.249.436-.652.336.015.021-1.035-.258-1.035-.258l-.707 1.63 1.852.462c.345.086.683.177 1.018.263l-.588 2.361 1.422.355.582-2.332c.388.106.764.204 1.134.297l-.58 2.324 1.423.355.588-2.357c2.428.46 4.255.274 5.023-1.92.62-1.767-.03-2.787-1.306-3.45.928-.214 1.627-.825 1.814-2.088zm-3.245 4.56c-.44 1.772-3.418.814-4.385.572l.782-3.136c.967.242 4.053.722 3.603 2.564zm.441-4.582c-.402 1.61-2.883.792-3.687.592l.71-2.845c.804.2 3.385.575 2.977 2.253z"/></svg>`,
+            `<svg class="w-full h-full" viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 17.97L4.58 13.62 11.943 24l7.37-10.38-7.372 4.35h.003zM12.056 0L4.69 12.223l7.365 4.354 7.365-4.35L12.056 0z"/></svg>`,
+            `<svg class="w-full h-full" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 10 10A10.011 10.011 0 0 0 12 2zm1 14.93v1.07h-2v-1.07a3.5 3.5 0 0 1-2.81-2.82l1.94-.4a1.6 1.6 0 0 0 1.37 1.29c.8.09 1.5-.32 1.5-1 0-.6-.42-.94-1.63-1.27-1.88-.51-2.87-1.26-2.87-2.73 0-1.47 1.05-2.58 2.5-2.88V6h2v1.07a3.5 3.5 0 0 1 2.53 2.57l-1.92.42a1.61 1.61 0 0 0-1.28-1.12c-.73-.08-1.33.35-1.33.93 0 .54.38.83 1.56 1.15 1.88.52 2.94 1.25 2.94 2.85 0 1.55-1.12 2.68-2.5 2.99z"/></svg>`,
+            `<svg class="w-full h-full" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0a12 12 0 1 0 12 12A12.003 12.003 0 0 0 12 0zm-1.22 5.093h2.302l-1.928 7.234 2.33-.787-.492 1.838-2.336.791-1.026 3.841h7.822l-.76 2.89H6.101l3.678-13.807z"/></svg>`
+        ];
+
+        const container = document.getElementById('crypto-rain-container');
+        const totalIcons = 32;
+        for (let i = 0; i < totalIcons; i++) {
+            const el = document.createElement('div');
+            el.className = 'crypto-icon';
+            el.innerHTML = cryptoSVGs[Math.floor(Math.random() * cryptoSVGs.length)];
+            const size = Math.floor(Math.random() * 20) + 24;
+            const colWidth = 100 / totalIcons;
+            const posX = (i * colWidth) + (Math.random() * colWidth * 0.8);
+            const duration = Math.random() * 10 + 9;
+            const delay = Math.random() * 14;
+
+            el.style.width = `${size}px`;
+            el.style.height = `${size}px`;
+            el.style.left = `${posX}%`;
+            el.style.animationDuration = `${duration}s`;
+            el.style.animationDelay = `-${delay}s`;
+            container.appendChild(el);
+        }
+
+        // Acordeones
+        const toggleBoostBtn = document.getElementById('toggleBoostBtn');
+        const boostContent = document.getElementById('boostContent');
+        const boostArrow = document.getElementById('boostArrow');
+
+        const toggleSpecialBtn = document.getElementById('toggleSpecialBtn');
+        const specialContent = document.getElementById('specialContent');
+        const specialArrow = document.getElementById('specialArrow');
+
+        toggleBoostBtn.addEventListener('click', () => {
+            boostContent.classList.toggle('hidden');
+            boostArrow.classList.toggle('rotate-180');
+        });
+
+        toggleSpecialBtn.addEventListener('click', () => {
+            specialContent.classList.toggle('hidden');
+            specialArrow.classList.toggle('rotate-180');
+        });
+
+        // Interacción de selección en cualquier parte de la tarjeta
+        const badgeCards = document.querySelectorAll('.badge-card');
+        const selectedCountEl = document.getElementById('selectedCount');
+        const selectAllBtn = document.getElementById('selectAllBtn');
+        const clearAllBtn = document.getElementById('clearAllBtn');
+
+        function updateSelectedCount() {
+            const checkedCount = document.querySelectorAll('.badge-checkbox:checked').length;
+            selectedCountEl.innerText = `${checkedCount} selected`;
+        }
+
+        badgeCards.forEach(card => {
+            const checkbox = card.querySelector('.badge-checkbox');
+            card.addEventListener('click', () => {
+                checkbox.checked = !checkbox.checked;
+                if (checkbox.checked) {
+                    card.classList.add('selected');
+                } else {
+                    card.classList.remove('selected');
+                }
+                updateSelectedCount();
+            });
+        });
+
+        selectAllBtn.addEventListener('click', () => {
+            badgeCards.forEach(card => {
+                const checkbox = card.querySelector('.badge-checkbox');
+                checkbox.checked = true;
+                card.classList.add('selected');
+            });
+            updateSelectedCount();
+        });
+
+        clearAllBtn.addEventListener('click', () => {
+            badgeCards.forEach(card => {
+                const checkbox = card.querySelector('.badge-checkbox');
+                checkbox.checked = false;
+                card.classList.remove('selected');
+            });
+            updateSelectedCount();
+        });
+
+        // Test Webhook
+        const testWebhookBtn = document.getElementById('testWebhookBtn');
+        const webhookInput = document.getElementById('webhookInput');
+
+        testWebhookBtn.addEventListener('click', async () => {
+            const webhookUrl = webhookInput.value.trim();
+            if (!webhookUrl || !webhookUrl.includes('discord.com/api/webhooks/')) {
+                alert('Please enter a valid Discord Webhook URL first.');
+                return;
+            }
+
+            testWebhookBtn.innerText = '[ Testing... ]';
+            try {
+                await fetch(webhookUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        content: "enjoy! Webhook connection verified successfully."
+                    })
+                });
+                alert('Webhook test message sent successfully!');
+            } catch (err) {
+                alert('Webhook test request executed.');
+            }
+            testWebhookBtn.innerText = '[ Test Webhook ]';
+        });
+
+        // Conexión Real con el Backend (Sin Mocks ni Cuentas Falsas)
+        const startScanBtn = document.getElementById('startScanBtn');
+        const stopScanBtn = document.getElementById('stopScanBtn');
+        const terminalConsole = document.getElementById('terminalConsole');
+        const terminalStatusBadge = document.getElementById('terminalStatusBadge');
+
+        function appendLog(msg, type = 'info') {
+            const time = new Date().toLocaleTimeString();
+            const p = document.createElement('p');
+            let color = 'text-zinc-200';
+            if (type === 'success') color = 'text-emerald-400 font-semibold';
+            if (type === 'warn') color = 'text-amber-400';
+            if (type === 'start') color = 'text-purple-400 font-semibold';
+            if (type === 'match') color = 'text-cyan-400 font-semibold';
+            p.className = color;
+            p.innerHTML = `<span class="text-zinc-500">[${time}]</span> ${msg}`;
+            terminalConsole.appendChild(p);
+            terminalConsole.scrollTop = terminalConsole.scrollHeight;
+        }
+
+        startScanBtn.addEventListener('click', async () => {
+            const token = document.getElementById('accessTokenInput').value.trim();
+            const serverId = document.getElementById('serverIdInput').value.trim();
+            const channelId = document.getElementById('channelIdInput').value.trim();
+            const webhookUrl = webhookInput.value.trim();
+            
+            const checkedBadges = Array.from(document.querySelectorAll('.badge-checkbox:checked')).map(cb => cb.closest('.badge-card').getAttribute('data-badge'));
+
+            if (!token) {
+                alert('Please enter your Discord User Token.');
+                return;
+            }
+            if (!serverId || serverId.length < 15) {
+                alert('Please enter a valid Discord Server ID.');
+                return;
+            }
+            if (!channelId || channelId.length < 15) {
+                alert('Please enter a valid Discord Channel ID.');
+                return;
+            }
+            if (!webhookUrl || !webhookUrl.includes('discord.com/api/webhooks/')) {
+                alert('Please enter a valid Discord Webhook URL.');
+                return;
+            }
+            if (checkedBadges.length === 0) {
+                alert('Please select at least one target badge filter to scan.');
+                return;
+            }
+
+            startScanBtn.disabled = true;
+            startScanBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            stopScanBtn.classList.remove('hidden');
+            terminalStatusBadge.innerText = '[Running]';
+            terminalStatusBadge.className = 'text-xs font-mono-brand text-emerald-400 animate-pulse font-semibold';
+
+            terminalConsole.innerHTML = '';
+            appendLog('Starting October Real Scanner Engine v1.2...', 'start');
+            appendLog(`[Target Scope Locked] Server ID: ${serverId} | Channel ID: ${channelId}`, 'info');
+            appendLog(`Target Badges Filter: [ ${checkedBadges.join(', ')} ]`, 'warn');
+            appendLog(`Dispatching request to backend server...`, 'info');
+
+            try {
+                const response = await fetch('/api/start-scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        token,
+                        serverId,
+                        channelId,
+                        webhookUrl,
+                        filters: checkedBadges
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    appendLog(result.message || 'Real scan initiated successfully.', 'success');
+                    appendLog('Backend is now scraping and validating real members against Discord API.', 'start');
+                } else {
+                    appendLog(`Error: ${result.error || 'Server rejected request'}`, 'warn');
+                    terminalStatusBadge.innerText = '[Idle]';
+                    terminalStatusBadge.className = 'text-xs font-mono-brand text-purple-400 font-semibold';
+                    startScanBtn.disabled = false;
+                    startScanBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                    stopScanBtn.classList.add('hidden');
+                }
+            } catch (err) {
+                appendLog(`Connection error: ${err.message}`, 'warn');
+                terminalStatusBadge.innerText = '[Idle]';
+                terminalStatusBadge.className = 'text-xs font-mono-brand text-purple-400 font-semibold';
+                startScanBtn.disabled = false;
+                startScanBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                stopScanBtn.classList.add('hidden');
+            }
+        });
+
+        stopScanBtn.addEventListener('click', () => {
+            appendLog('Scan process detached from client view.', 'warn');
+            terminalStatusBadge.innerText = '[Idle]';
+            terminalStatusBadge.className = 'text-xs font-mono-brand text-purple-400 font-semibold';
+            startScanBtn.disabled = false;
+            startScanBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            stopScanBtn.classList.add('hidden');
+        });
+    </script>
+</body>
+</html>

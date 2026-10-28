@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: october-discord-scanner
+    env: node
+    buildCommand: npm install
+    startCommand: node server.js

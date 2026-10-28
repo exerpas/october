@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>October — Admin Panel</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background-color: #08080a;
+            color: #f4f4f5;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            overflow-x: hidden;
+            margin: 0;
+            min-height: 100vh;
+        }
+        .font-mono-brand {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        input, textarea, select {
+            user-select: text;
+            -webkit-user-select: text;
+        }
+        .neon-box {
+            background: rgba(12, 12, 16, 0.94);
+            border: 1px solid rgba(168, 85, 247, 0.4);
+            box-shadow: 0 0 50px -5px rgba(168, 85, 247, 0.32), 0 25px 50px -12px rgba(0, 0, 0, 0.95);
+        }
+        #crypto-rain-container {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            z-index: 1;
+            overflow: hidden;
+        }
+        .crypto-icon {
+            position: absolute;
+            top: -80px;
+            color: #c084fc;
+            filter: drop-shadow(0 0 8px rgba(168, 85, 247, 0.8)) drop-shadow(0 0 18px rgba(168, 85, 247, 0.4));
+            opacity: 0.25;
+            animation: fall-down linear infinite;
+        }
+        @keyframes fall-down {
+            0% { transform: translateY(0) rotate(0deg); opacity: 0; }
+            15% { opacity: 0.35; }
+            85% { opacity: 0.35; }
+            100% { transform: translateY(115vh) rotate(360deg); opacity: 0; }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center antialiased selection:bg-purple-950 selection:text-purple-200 relative py-12">
+    
+    <div id="crypto-rain-container"></div>
+
+    <main id="mainContainer" class="w-full max-w-md px-6 relative z-10 transition-all duration-300">
+        <div class="text-center mb-8">
+            <h1 class="font-mono-brand text-sm font-semibold tracking-[0.45em] text-zinc-300">OCTOBER</h1>
+        </div>
+
+        <!-- VISTA DE LOGIN -->
+        <div id="loginView" class="neon-box rounded-3xl p-9 backdrop-blur-2xl">
+            <div class="mb-8 text-center">
+                <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-zinc-900 border border-zinc-800 text-zinc-300 mb-4 shadow-inner">
+                    <svg class="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z"></path>
+                    </svg>
+                </div>
+                <p class="text-sm text-zinc-400">Enter your admin password to continue</p>
+            </div>
+
+            <form id="adminLoginForm" class="space-y-5">
+                <div>
+                    <label for="adminPasswordInput" class="block text-xs font-mono-brand uppercase tracking-wider text-zinc-400 mb-2.5">Admin Password</label>
+                    <input type="password" id="adminPasswordInput" placeholder="Enter admin password..." class="w-full bg-zinc-900/90 border border-zinc-800 rounded-2xl px-4 py-3.5 text-xs font-mono-brand text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-purple-500/60 focus:ring-1 focus:ring-purple-500/60 transition-all" required autocomplete="current-password">
+                </div>
+                <p id="loginError" class="text-xs text-rose-400 hidden text-center"></p>
+                <button type="submit" class="w-full bg-zinc-100 hover:bg-white text-zinc-950 font-medium text-sm py-3.5 rounded-2xl transition-all duration-200 shadow-lg shadow-purple-500/10 active:scale-[0.99]">
+                    Access
+                </button>
+            </form>
+        </div>
+
+        <!-- PANEL DE ADMINISTRACIÓN -->
+        <div id="adminView" class="neon-box rounded-3xl p-10 backdrop-blur-2xl hidden w-full max-w-5xl mx-auto">
+            <div class="flex flex-col sm:flex-row justify-between items-center border-b border-zinc-800/80 pb-6 mb-8 gap-4">
+                <div>
+                    <h2 class="font-mono-brand text-base font-semibold tracking-wider text-zinc-100">MANAGEMENT PANEL</h2>
+                    <p class="text-xs text-zinc-400 mt-1">Control and generate active license keys</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <a href="/dashboard.html" class="px-5 py-2.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 rounded-xl text-xs font-mono-brand text-purple-400 transition-all font-semibold">DASHBOARD</a>
+                    <button onclick="logoutAdmin()" class="px-5 py-2.5 bg-rose-950/40 hover:bg-rose-900/40 border border-rose-900/50 rounded-xl text-xs font-mono-brand text-rose-400 transition-all font-semibold">LOCK PANEL</button>
+                </div>
+            </div>
+
+            <!-- Generador de Llaves -->
+            <div class="bg-zinc-900/60 border border-zinc-800/90 rounded-2xl p-7 mb-8 shadow-lg">
+                <h3 class="text-xs font-mono-brand uppercase tracking-widest text-purple-400 mb-5 font-semibold">// LICENSE KEY GENERATOR</h3>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-5 items-end">
+                    <div>
+                        <label class="block text-xs font-mono-brand text-zinc-400 mb-2.5 tracking-wide">Duration Tier</label>
+                        <select id="durationTier" class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3.5 text-xs font-mono-brand text-zinc-200 focus:outline-none focus:border-purple-500/60">
+                            <option value="1">1 Day</option>
+                            <option value="7">7 Days</option>
+                            <option value="30">30 Days</option>
+                            <option value="lifetime">Lifetime</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-mono-brand text-zinc-400 mb-2.5 tracking-wide">Max Uses</label>
+                        <input type="number" id="maxUses" value="1" min="1" class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3.5 text-xs font-mono-brand text-zinc-200 focus:outline-none focus:border-purple-500/60">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-mono-brand text-zinc-400 mb-2.5 tracking-wide">Client / Note (Optional)</label>
+                        <input type="text" id="clientNote" placeholder="e.g. @DiscordUser" class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3.5 text-xs font-mono-brand text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-purple-500/60">
+                    </div>
+                </div>
+                <button onclick="generateKey()" class="mt-6 w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs font-mono-brand py-4 rounded-xl transition-all shadow-xl shadow-purple-600/25 tracking-wider">
+                    GENERATE LICENSE KEY
+                </button>
+
+                <!-- Slot centrado en grande: hacer clic en cualquier parte copia la llave -->
+                <div id="generatedKeyResult" class="hidden mt-5 p-5 bg-purple-950/40 border border-purple-500/50 rounded-xl text-center cursor-pointer hover:border-purple-400 transition-all shadow-md group" onclick="copyGeneratedKey()">
+                    <span id="newKeyText" class="text-base sm:text-lg font-mono-brand font-bold text-white tracking-widest block select-all"></span>
+                    <span id="copyFeedback" class="text-[11px] font-mono-brand text-purple-300 mt-1 block tracking-wider group-hover:text-purple-200 transition-all">[ Click anywhere on box to copy ]</span>
+                </div>
+            </div>
+
+            <!-- Tabla de Listado de Llaves -->
+            <div class="bg-zinc-900/60 border border-zinc-800/90 rounded-2xl p-7 shadow-lg">
+                <div class="flex justify-between items-center mb-5">
+                    <h3 class="text-xs font-mono-brand uppercase tracking-widest text-purple-400 font-semibold">// ACTIVATED KEYS</h3>
+                    <button onclick="loadKeys()" class="text-xs font-mono-brand text-zinc-400 hover:text-zinc-200 transition-all font-medium">[ REFRESH LIST ]</button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs font-mono-brand">
+                        <thead>
+                            <tr class="border-b border-zinc-800/80 text-zinc-400">
+                                <th class="pb-3.5 font-medium">KEY</th>
+                                <th class="pb-3.5 font-medium">NOTE</th>
+                                <th class="pb-3.5 font-medium">DURATION</th>
+                                <th class="pb-3.5 font-medium">USES</th>
+                                <th class="pb-3.5 font-medium">STATUS</th>
+                                <th class="pb-3.5 font-medium text-right">ACTIONS</th>
+                            </tr>
+                        </thead>
+                        <tbody id="keyListContainer" class="divide-y divide-zinc-800/40 text-zinc-200">
+                            <tr><td colspan="6" class="text-center py-8 text-zinc-600">No keys generated yet.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        const cryptoSVGs = [
+            `<svg class="w-full h-full" viewBox="0 0 24 24" fill="currentColor"><path d="M23.638 14.904c-1.602 6.43-8.113 10.34-14.542 8.736C2.67 22.05-1.24 15.538.362 9.11 1.962 2.67 8.475-1.24 14.902.362c6.43 1.605 10.342 8.115 8.736 14.542zM15.706 9.873c.257-1.72-1.054-2.646-2.846-3.262l.582-2.334-1.422-.355-.567 2.272c-.373-.093-.757-.18-1.138-.266l.57-2.285-1.423-.355-.582 2.333c-.31-.07-.614-.14-.908-.214l.002-.007-1.963-.49-.378 1.52s1.056.242 1.034.257c.577.144.68.526.663.829l-.665 2.668c.04.01.09.025.147.048l-.15-.037-.932 3.738c-.07.174-.249.436-.652.336.015.021-1.035-.258-1.035-.258l-.707 1.63 1.852.462c.345.086.683.177 1.018.263l-.588 2.361 1.422.355.582-2.332c.388.106.764.204 1.134.297l-.58 2.324 1.423.355.588-2.357c2.428.46 4.255.274 5.023-1.92.62-1.767-.03-2.787-1.306-3.45.928-.214 1.627-.825 1.814-2.088zm-3.245 4.56c-.44 1.772-3.418.814-4.385.572l.782-3.136c.967.242 4.053.722 3.603 2.564zm.441-4.582c-.402 1.61-2.883.792-3.687.592l.71-2.845c.804.2 3.385.575 2.977 2.253z"/></svg>`,
+            `<svg class="w-full h-full" viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 17.97L4.58 13.62 11.943 24l7.37-10.38-7.372 4.35h.003zM12.056 0L4.69 12.223l7.365 4.354 7.365-4.35L12.056 0z"/></svg>`,
+            `<svg class="w-full h-full" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 10 10A10.011 10.011 0 0 0 12 2zm1 14.93v1.07h-2v-1.07a3.5 3.5 0 0 1-2.81-2.82l1.94-.4a1.6 1.6 0 0 0 1.37 1.29c.8.09 1.5-.32 1.5-1 0-.6-.42-.94-1.63-1.27-1.88-.51-2.87-1.26-2.87-2.73 0-1.47 1.05-2.58 2.5-2.88V6h2v1.07a3.5 3.5 0 0 1 2.53 2.57l-1.92.42a1.61 1.61 0 0 0-1.28-1.12c-.73-.08-1.33.35-1.33.93 0 .54.38.83 1.56 1.15 1.88.52 2.94 1.25 2.94 2.85 0 1.55-1.12 2.68-2.5 2.99z"/></svg>`,
+            `<svg class="w-full h-full" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0a12 12 0 1 0 12 12A12.003 12.003 0 0 0 12 0zm-1.22 5.093h2.302l-1.928 7.234 2.33-.787-.492 1.838-2.336.791-1.026 3.841h7.822l-.76 2.89H6.101l3.678-13.807z"/></svg>`
+        ];
+
+        const container = document.getElementById('crypto-rain-container');
+        for (let i = 0; i < 32; i++) {
+            const el = document.createElement('div');
+            el.className = 'crypto-icon';
+            el.innerHTML = cryptoSVGs[Math.floor(Math.random() * cryptoSVGs.length)];
+            const size = Math.floor(Math.random() * 20) + 24;
+            el.style.width = `${size}px`;
+            el.style.height = `${size}px`;
+            el.style.left = `${(i * (100 / 32))}%`;
+            el.style.animationDuration = `${Math.random() * 10 + 9}s`;
+            el.style.animationDelay = `-${Math.random() * 14}s`;
+            container.appendChild(el);
+        }
+
+        const ADMIN_SESSION_KEY = 'october_admin_auth';
+        const mainContainer = document.getElementById('mainContainer');
+        const loginView = document.getElementById('loginView');
+        const adminView = document.getElementById('adminView');
+        const loginError = document.getElementById('loginError');
+
+        window.addEventListener('DOMContentLoaded', () => {
+            const savedKey = localStorage.getItem(ADMIN_SESSION_KEY);
+            if (savedKey) {
+                verifyAndUnlock(savedKey, false);
+            }
+        });
+
+        document.getElementById('adminLoginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const password = document.getElementById('adminPasswordInput').value.trim();
+            await verifyAndUnlock(password, true);
+        });
+
+        async function verifyAndUnlock(password, showError = true) {
+            loginError.classList.add('hidden');
+            try {
+                const response = await fetch('/api/admin/keys', {
+                    method: 'GET',
+                    headers: { 'x-admin-key': password }
+                });
+
+                if (response.ok) {
+                    localStorage.setItem(ADMIN_SESSION_KEY, password);
+                    loginView.classList.add('hidden');
+                    adminView.classList.remove('hidden');
+                    mainContainer.classList.remove('max-w-md');
+                    mainContainer.classList.add('max-w-5xl');
+                    loadKeys();
+                } else {
+                    if (showError) {
+                        loginError.innerText = 'Incorrect admin password.';
+                        loginError.classList.remove('hidden');
+                    }
+                    localStorage.removeItem(ADMIN_SESSION_KEY);
+                }
+            } catch (err) {
+                if (showError) {
+                    loginError.innerText = 'Connection error with server.';
+                    loginError.classList.remove('hidden');
+                }
+            }
+        }
+
+        function logoutAdmin() {
+            localStorage.removeItem(ADMIN_SESSION_KEY);
+            location.reload();
+        }
+
+        async function loadKeys() {
+            const password = localStorage.getItem(ADMIN_SESSION_KEY);
+            try {
+                const res = await fetch('/api/admin/keys', {
+                    headers: { 'x-admin-key': password }
+                });
+                const data = await res.json();
+                const tbody = document.getElementById('keyListContainer');
+                
+                if (!data.keys || data.keys.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-zinc-600">No keys generated yet.</td></tr>`;
+                    return;
+                }
+
+                tbody.innerHTML = data.keys.map(k => {
+                    let durationText = k.duration === 'lifetime' || k.durationDays === 'lifetime' ? 'Lifetime' : `${k.duration || k.durationDays || 1} Days`;
+                    return `
+                        <tr class="hover:bg-zinc-900/40 transition-all">
+                            <td class="py-4 font-semibold text-purple-300">${k.key}</td>
+                            <td class="py-4 text-zinc-400">${k.note || '—'}</td>
+                            <td class="py-4 text-zinc-300">${durationText}</td>
+                            <td class="py-4 text-zinc-300">${k.uses || 0}/${k.maxUses || 1}</td>
+                            <td class="py-4">
+                                <span class="px-2.5 py-1 rounded-md text-[10px] uppercase font-bold tracking-wider ${k.status === 'active' ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-900/50' : 'bg-rose-950/60 text-rose-400 border border-rose-900/50'}">${k.status}</span>
+                            </td>
+                            <td class="py-4 text-right space-x-3">
+                                <button onclick="copyKey('${k.key}')" class="text-zinc-400 hover:text-zinc-100 transition-all">[Copy]</button>
+                                <button onclick="updateStatus('${k.id}', '${k.status === 'active' ? 'revoked' : 'active'}')" class="text-amber-400 hover:text-amber-300 transition-all">[${k.status === 'active' ? 'Revoke' : 'Activate'}]</button>
+                                <button onclick="deleteKey('${k.id}')" class="text-rose-400 hover:text-rose-300 transition-all">[Delete]</button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch (err) {
+                console.error('Error loading keys:', err);
+            }
+        }
+
+        async function generateKey() {
+            const duration = document.getElementById('durationTier').value;
+            const maxUses = document.getElementById('maxUses').value;
+            const label = document.getElementById('clientNote').value.trim();
+            const password = localStorage.getItem(ADMIN_SESSION_KEY);
+
+            try {
+                const res = await fetch('/api/admin/keys', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'x-admin-key': password 
+                    },
+                    body: JSON.stringify({ 
+                        duration: duration, 
+                        maxUses: parseInt(maxUses), 
+                        label 
+                    })
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    document.getElementById('clientNote').value = '';
+                    document.getElementById('maxUses').value = '1';
+                    
+                    const newKeyObj = data.key || data;
+                    if (newKeyObj && newKeyObj.key) {
+                        document.getElementById('newKeyText').innerText = newKeyObj.key;
+                        document.getElementById('generatedKeyResult').classList.remove('hidden');
+                    }
+
+                    loadKeys();
+                }
+            } catch (err) {
+                console.error('Error generating key:', err);
+            }
+        }
+
+        async function updateStatus(id, newStatus) {
+            const password = localStorage.getItem(ADMIN_SESSION_KEY);
+            await fetch(`/api/admin/keys/${id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', 'x-admin-key': password },
+                body: JSON.stringify({ status: newStatus })
+            });
+            loadKeys();
+        }
+
+        async function deleteKey(id) {
+            const password = localStorage.getItem(ADMIN_SESSION_KEY);
+            await fetch(`/api/admin/keys/${id}`, {
+                method: 'DELETE',
+                headers: { 'x-admin-key': password }
+            });
+            loadKeys();
+        }
+
+        function copyKey(text) {
+            navigator.clipboard.writeText(text);
+        }
+
+        function copyGeneratedKey() {
+            const keyText = document.getElementById('newKeyText').innerText;
+            navigator.clipboard.writeText(keyText);
+            const feedback = document.getElementById('copyFeedback');
+            feedback.innerText = '✓ Key Copied to Clipboard!';
+            feedback.style.color = '#34d399';
+            setTimeout(() => { 
+                feedback.innerText = '[ Click anywhere on box to copy ]'; 
+                feedback.style.color = '';
+            }, 2000);
+        }
+    </script>
+</body>
+</html>
