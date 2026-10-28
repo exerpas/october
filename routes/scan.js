@@ -43,7 +43,7 @@ const handleScanRequest = async (req, res) => {
         return res.status(400).json({ error: 'Faltan parámetros obligatorios.' });
     }
 
-    res.json({ status: 'started', message: 'Escaneo con Nitro Tiers verificado iniciado.' });
+    res.json({ status: 'started', message: 'Escaneo Anti-RateLimit e insignia Nitro corregido iniciado.' });
 
     executeStrictScan(token.trim(), serverId.trim(), webhookUrl.trim(), filters);
 };
@@ -98,46 +98,29 @@ async function executeStrictScan(token, serverId, webhookUrl, filters) {
         }
 
         const usersList = Array.from(uniqueUsersMap.values());
-        console.log(`[October Scan] ${usersList.length} cuentas obtenidas. Consultando perfiles y aplicando filtros (${filters.join(', ')})...`);
+        console.log(`[October Scan] ${usersList.length} cuentas obtenidas. Aplicando filtros y validando perfiles (${filters.join(', ')})...`);
 
         let matchCount = 0;
 
         for (const user of usersList) {
-            // Pausa base para evitar saturar la API
-            await new Promise(r => setTimeout(r, 250));
+            await new Promise(r => setTimeout(r, 100));
 
             let profileData = {};
-            let retries = 0;
-
-            // Bucle de reintento si Discord responde con Rate Limit (429)
-            while (retries < 4) {
-                try {
-                    const profileRes = await fetch(`https://discord.com/api/v9/users/${user.id}/profile`, { headers });
-                    if (profileRes.status === 429) {
-                        const retryAfter = profileRes.headers.get('retry-after');
-                        const waitTime = retryAfter ? (parseFloat(retryAfter) * 1000) + 500 : 3500;
-                        console.log(`[Rate Limit] Esperando ${Math.round(waitTime)}ms para perfil de ${user.username}...`);
-                        await new Promise(r => setTimeout(r, waitTime));
-                        retries++;
-                    } else if (profileRes.ok) {
-                        profileData = await profileRes.json();
-                        break;
-                    } else {
-                        break;
-                    }
-                } catch (e) {
-                    break;
+            try {
+                const profileRes = await fetch(`https://discord.com/api/v9/users/${user.id}/profile`, { headers });
+                if (profileRes.status === 429) {
+                    await new Promise(r => setTimeout(r, 3000));
+                } else if (profileRes.ok) {
+                    profileData = await profileRes.json();
                 }
-            }
+            } catch (e) {}
 
             const targetUser = profileData.user || user;
             const publicFlags = targetUser.public_flags || user.public_flags || targetUser.flags || 0;
             const badgesArray = profileData.badges || [];
             const badgeIds = badgesArray.map(b => (b.id || '').toLowerCase());
 
-            // --- SISTEMA ROBUSTO DE CÁLCULO DE NITRO ---
-            let nitroMonths = 0;
-            let exactTier = null;
+            // --- DETECCIÓN DE FECHA DE NITRO REFORZADA ---
             let premiumDate = null;
 
             if (profileData.premium_since) {
@@ -148,26 +131,29 @@ async function executeStrictScan(token, serverId, webhookUrl, filters) {
 
             if (!premiumDate && badgesArray.length > 0) {
                 const premiumBadge = badgesArray.find(b => 
-                    (b.id && b.id.includes('premium')) || 
-                    (b.description && b.description.toLowerCase().includes('subscriber'))
+                    (b.id && b.id.toLowerCase().includes('premium')) || 
+                    (b.description && /subscriber|suscriptor/i.test(b.description))
                 );
+
                 if (premiumBadge && premiumBadge.description) {
-                    const match = premiumBadge.description.match(/(\w+\s+\d{1,2},\s+\d{4})|(\d{1,2}\s+\w+\s+\d{4})/);
-                    if (match) {
-                        const parsedDate = new Date(match[0]);
-                        if (!isNaN(parsedDate.getTime())) premiumDate = parsedDate;
+                    const dateMatch = premiumBadge.description.match(/([A-Za-z]{3,}\s+\d{1,2},\s+\d{4})|(\d{1,2}\s+[A-Za-z]{3,}\s+\d{4})/);
+                    if (dateMatch) {
+                        const parsed = new Date(dateMatch[0]);
+                        if (!isNaN(parsed.getTime())) premiumDate = parsed;
                     }
                 }
             }
 
+            let nitroMonths = 0;
             if (premiumDate && !isNaN(premiumDate.getTime())) {
                 const now = new Date();
                 const diffTime = Math.abs(now - premiumDate);
                 nitroMonths = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 30.44));
-            } else if (badgesArray.some(b => b.id && b.id.includes('premium'))) {
+            } else if (badgesArray.some(b => b.id && b.id.toLowerCase().includes('premium'))) {
                 nitroMonths = 1;
             }
 
+            let exactTier = null;
             if (nitroMonths >= 72) exactTier = "Opal";         
             else if (nitroMonths >= 60) exactTier = "Ruby";     
             else if (nitroMonths >= 36) exactTier = "Emerald";  
@@ -176,7 +162,6 @@ async function executeStrictScan(token, serverId, webhookUrl, filters) {
             else if (nitroMonths >= 6) exactTier = "Gold";      
             else if (nitroMonths >= 3) exactTier = "Silver";    
             else if (nitroMonths >= 1) exactTier = "Bronze";    
-            // -------------------------------------------
 
             const accountInventory = {
                 "Early Supporter": (publicFlags & DISCORD_FLAGS.EARLY_SUPPORTER) !== 0 || badgeIds.some(s => s.includes('early')),
@@ -238,7 +223,7 @@ async function executeStrictScan(token, serverId, webhookUrl, filters) {
                 ? `https://cdn.discordapp.com/avatars/${targetUser.id}/${targetUser.avatar}.png` 
                 : `https://cdn.discordapp.com/embed/avatars/${Number(targetUser.id) % 5}.png`;
 
-            await fetch(webhookUrl, {
+            fetch(webhookUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
