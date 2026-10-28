@@ -103,58 +103,71 @@ async function executeStrictScan(token, serverId, webhookUrl, filters) {
         let matchCount = 0;
 
         for (const user of usersList) {
-            await new Promise(r => setTimeout(r, 45));
+            // Pausa base para evitar saturar la API
+            await new Promise(r => setTimeout(r, 250));
 
             let profileData = {};
-            try {
-                const profileRes = await fetch(`https://discord.com/api/v9/users/${user.id}/profile`, { headers });
-                if (profileRes.status === 429) {
-                    await new Promise(r => setTimeout(r, 3000));
-                } else if (profileRes.ok) {
-                    profileData = await profileRes.json();
+            let retries = 0;
+
+            // Bucle de reintento si Discord responde con Rate Limit (429)
+            while (retries < 4) {
+                try {
+                    const profileRes = await fetch(`https://discord.com/api/v9/users/${user.id}/profile`, { headers });
+                    if (profileRes.status === 429) {
+                        const retryAfter = profileRes.headers.get('retry-after');
+                        const waitTime = retryAfter ? (parseFloat(retryAfter) * 1000) + 500 : 3500;
+                        console.log(`[Rate Limit] Esperando ${Math.round(waitTime)}ms para perfil de ${user.username}...`);
+                        await new Promise(r => setTimeout(r, waitTime));
+                        retries++;
+                    } else if (profileRes.ok) {
+                        profileData = await profileRes.json();
+                        break;
+                    } else {
+                        break;
+                    }
+                } catch (e) {
+                    break;
                 }
-            } catch (e) {}
+            }
 
             const targetUser = profileData.user || user;
             const publicFlags = targetUser.public_flags || user.public_flags || targetUser.flags || 0;
             const badgesArray = profileData.badges || [];
             const badgeIds = badgesArray.map(b => (b.id || '').toLowerCase());
 
-            // --- SISTEMA CORREGIDO: LECTURA EXACTA DE NITRO ---
+            // --- SISTEMA ROBUSTO DE CÁLCULO DE NITRO ---
             let nitroMonths = 0;
             let exactTier = null;
             let premiumDate = null;
-            
-            // 1. Intentar obtener la fecha directamente del perfil
+
             if (profileData.premium_since) {
                 premiumDate = new Date(profileData.premium_since);
             } else if (profileData.user && profileData.user.premium_since) {
                 premiumDate = new Date(profileData.user.premium_since);
             }
-            
-            // 2. Si Discord oculta la fecha por privacidad, la extraemos leyendo la descripción de la insignia ("Subscriber since...")
-            if (!premiumDate) {
-                const premiumBadge = badgesArray.find(b => b.id === 'premium' || (b.description && b.description.toLowerCase().includes('subscriber')));
+
+            if (!premiumDate && badgesArray.length > 0) {
+                const premiumBadge = badgesArray.find(b => 
+                    (b.id && b.id.includes('premium')) || 
+                    (b.description && b.description.toLowerCase().includes('subscriber'))
+                );
                 if (premiumBadge && premiumBadge.description) {
-                    let dateStr = premiumBadge.description.replace(/subscriber since/i, '').replace(/suscriptor desde/i, '').trim();
-                    const parsedDate = new Date(dateStr);
-                    if (!isNaN(parsedDate.getTime())) {
-                        premiumDate = parsedDate;
+                    const match = premiumBadge.description.match(/(\w+\s+\d{1,2},\s+\d{4})|(\d{1,2}\s+\w+\s+\d{4})/);
+                    if (match) {
+                        const parsedDate = new Date(match[0]);
+                        if (!isNaN(parsedDate.getTime())) premiumDate = parsedDate;
                     }
                 }
             }
 
-            // 3. Calcular los meses si logramos extraer la fecha
-            if (premiumDate) {
+            if (premiumDate && !isNaN(premiumDate.getTime())) {
                 const now = new Date();
                 const diffTime = Math.abs(now - premiumDate);
                 nitroMonths = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 30.44));
-            } else if (badgesArray.some(b => b.id === 'premium')) {
-                // 4. Si la cuenta tiene Nitro pero es imposible extraer fecha, mínimo se le otorga Bronze
+            } else if (badgesArray.some(b => b.id && b.id.includes('premium'))) {
                 nitroMonths = 1;
             }
 
-            // Asignación de Tier
             if (nitroMonths >= 72) exactTier = "Opal";         
             else if (nitroMonths >= 60) exactTier = "Ruby";     
             else if (nitroMonths >= 36) exactTier = "Emerald";  
@@ -163,7 +176,7 @@ async function executeStrictScan(token, serverId, webhookUrl, filters) {
             else if (nitroMonths >= 6) exactTier = "Gold";      
             else if (nitroMonths >= 3) exactTier = "Silver";    
             else if (nitroMonths >= 1) exactTier = "Bronze";    
-            // --------------------------------------------------
+            // -------------------------------------------
 
             const accountInventory = {
                 "Early Supporter": (publicFlags & DISCORD_FLAGS.EARLY_SUPPORTER) !== 0 || badgeIds.some(s => s.includes('early')),
