@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
-const { HttpsProxyAgent } = require('https-proxy-agent'); // <-- LIBRERÍA DE PROXY
+const { HttpsProxyAgent } = require('https-proxy-agent');
 
 const MAX_MATCHES = 500;             
 const DELAY_BETWEEN_PROFILES = 350;  
@@ -52,11 +52,8 @@ const getSuperProperties = () => {
     })).toString('base64');
 };
 
-// Petición de perfil enmascarada con Proxy
 async function fetchUserProfile(userId, headers) {
     let retries = 0;
-    
-    // Conectamos el Proxy desde Render
     const proxyUrl = process.env.PROXY_URL;
     const fetchOptions = { headers };
     
@@ -76,14 +73,9 @@ async function fetchUserProfile(userId, headers) {
                 continue;
             }
             
-            if (!res.ok) {
-                console.error(`[Aviso Render/Proxy] Discord denegó el perfil ${userId} con Status: ${res.status}.`);
-                break;
-            }
-
+            if (!res.ok) break;
             return await res.json();
         } catch (e) {
-            console.error(`[Error Proxy/Red] ID ${userId}:`, e.message);
             break;
         }
     }
@@ -111,9 +103,7 @@ function calculateNitroTier(profileData) {
         if (premiumBadge && premiumBadge.description) {
             const cleanDesc = premiumBadge.description.replace(/.*(since|desde)\s+/i, '').trim();
             const parsed = new Date(cleanDesc);
-            if (!isNaN(parsed.getTime())) {
-                premiumDate = parsed;
-            }
+            if (!isNaN(parsed.getTime())) premiumDate = parsed;
         }
     }
 
@@ -147,7 +137,7 @@ const handleScanRequest = async (req, res) => {
 
     res.json({ 
         status: 'started', 
-        message: `Buscando hasta ${MAX_MATCHES} cuentas filtradas a ${DELAY_BETWEEN_PROFILES}ms con Bypass de IP.` 
+        message: `Escaneo anti-duplicados iniciado (máx ${MAX_MATCHES}).` 
     });
 
     executeStrictScan(token.trim(), serverId.trim(), webhookUrl.trim(), filters);
@@ -167,17 +157,14 @@ async function executeStrictScan(token, serverId, webhookUrl, filters) {
 
     try {
         const channelsRes = await fetch(`https://discord.com/api/v9/guilds/${serverId}/channels`, { headers });
-
-        if (!channelsRes.ok) {
-            console.error('[October Scan Error] No se pudieron obtener los canales del servidor.');
-            return;
-        }
+        if (!channelsRes.ok) return;
 
         const channels = await channelsRes.json();
         const textChannels = channels.filter(c => c.type === 0);
-        console.log(`[October Scan] Detectados ${textChannels.length} canales. Descartando ovejas sin filtros...`);
+        console.log(`[October Scan] ${textChannels.length} canales detectados. Filtrando duplicados...`);
 
         const scannedUserIds = new Set();
+        const globalSentUsers = new Set(); // <-- BLOQUEO ABSOLUTO DE DUPLICADOS EN WEBHOOK
         let matchCount = 0;
 
         for (const channel of textChannels) {
@@ -203,6 +190,7 @@ async function executeStrictScan(token, serverId, webhookUrl, filters) {
 
                         const userId = msg.author.id;
 
+                        // Si ya se escaneó este usuario en este ciclo, se omite
                         if (scannedUserIds.has(userId)) continue;
                         scannedUserIds.add(userId);
 
@@ -244,10 +232,14 @@ async function executeStrictScan(token, serverId, webhookUrl, filters) {
                             }
                         }
 
-                        if (!matchesSearch) continue; // Descartar cuenta si no cumple el filtro
+                        if (!matchesSearch) continue;
+
+                        // GARANTÍA: Si este usuario ya fue enviado a la webhook antes, se descarta por completo
+                        if (globalSentUsers.has(userId)) continue;
+                        globalSentUsers.add(userId);
 
                         matchCount++;
-                        console.log(`[MATCH #${matchCount}/${MAX_MATCHES}] Usuario: ${targetUser.username} -> Nitro Tier: ${exactTier || 'None'}`);
+                        console.log(`[MATCH #${matchCount}/${MAX_MATCHES}] Usuario único: ${targetUser.username} -> Nitro Tier: ${exactTier || 'None'}`);
 
                         let specialBadgesList = [];
                         const specialKeys = ["Discord Staff", "Partner", "HypeSquad Events", "Bug Hunter Level 1", "Bug Hunter Level 2", "Early Supporter", "Bot Developer", "Active Developer", "Alumni"];
@@ -256,9 +248,7 @@ async function executeStrictScan(token, serverId, webhookUrl, filters) {
                         }
 
                         let nitroTierList = [];
-                        if (exactTier) {
-                            nitroTierList.push(exactTier);
-                        }
+                        if (exactTier) nitroTierList.push(exactTier);
 
                         let badgesText = specialBadgesList.length > 0 
                             ? specialBadgesList.map(b => getCustomEmoji(b)).join("  ") 
@@ -300,7 +290,7 @@ async function executeStrictScan(token, serverId, webhookUrl, filters) {
                 }
             } catch (e) {}
         }
-        console.log(`[October Scan] Búsqueda finalizada. ${matchCount} ovejas capturadas y enviadas.`);
+        console.log(`[October Scan] Búsqueda finalizada. ${matchCount} cuentas únicas enviadas sin duplicados.`);
     } catch (err) {
         console.error('Error general en el escaneo:', err);
     }
