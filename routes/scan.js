@@ -43,7 +43,7 @@ const handleScanRequest = async (req, res) => {
         return res.status(400).json({ error: 'Faltan parámetros obligatorios.' });
     }
 
-    res.json({ status: 'started', message: 'Escaneo Anti-RateLimit e insignia Nitro corregido iniciado.' });
+    res.json({ status: 'started', message: 'Escaneo con reintento estricto de perfiles iniciado.' });
 
     executeStrictScan(token.trim(), serverId.trim(), webhookUrl.trim(), filters);
 };
@@ -98,29 +98,46 @@ async function executeStrictScan(token, serverId, webhookUrl, filters) {
         }
 
         const usersList = Array.from(uniqueUsersMap.values());
-        console.log(`[October Scan] ${usersList.length} cuentas obtenidas. Aplicando filtros y validando perfiles (${filters.join(', ')})...`);
+        console.log(`[October Scan] ${usersList.length} cuentas obtenidas. Consultando perfiles sin perder datos de Nitro...`);
 
         let matchCount = 0;
 
         for (const user of usersList) {
-            await new Promise(r => setTimeout(r, 100));
+            // Pausa obligatoria de 1.2s entre perfiles para prevenir bloqueos agresivos de Discord
+            await new Promise(r => setTimeout(r, 1200));
 
             let profileData = {};
-            try {
-                const profileRes = await fetch(`https://discord.com/api/v9/users/${user.id}/profile`, { headers });
-                if (profileRes.status === 429) {
-                    await new Promise(r => setTimeout(r, 3000));
-                } else if (profileRes.ok) {
-                    profileData = await profileRes.json();
+            let fetchedSuccess = false;
+            let retries = 0;
+
+            // BUCLE DE REINTENTO HASTA QUE DISCORD ENTREGUE EL PERFIL REAL
+            while (!fetchedSuccess && retries < 5) {
+                try {
+                    const profileRes = await fetch(`https://discord.com/api/v9/users/${user.id}/profile`, { headers });
+                    
+                    if (profileRes.status === 429) {
+                        const errBody = await profileRes.json().catch(() => ({}));
+                        const waitMs = (errBody.retry_after ? errBody.retry_after * 1000 : 3500) + 500;
+                        console.log(`[Rate Limit 429] Reintentando ${user.username} en ${Math.round(waitMs)}ms (Intento ${retries + 1}/5)...`);
+                        await new Promise(r => setTimeout(r, waitMs));
+                        retries++;
+                    } else if (profileRes.ok) {
+                        profileData = await profileRes.json();
+                        fetchedSuccess = true;
+                    } else {
+                        break;
+                    }
+                } catch (e) {
+                    break;
                 }
-            } catch (e) {}
+            }
 
             const targetUser = profileData.user || user;
             const publicFlags = targetUser.public_flags || user.public_flags || targetUser.flags || 0;
             const badgesArray = profileData.badges || [];
             const badgeIds = badgesArray.map(b => (b.id || '').toLowerCase());
 
-            // --- DETECCIÓN DE FECHA DE NITRO REFORZADA ---
+            // EXTRAER FECHA DE NITRO
             let premiumDate = null;
 
             if (profileData.premium_since) {
