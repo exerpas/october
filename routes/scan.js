@@ -3,7 +3,7 @@ const router = express.Router();
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 const MAX_MATCHES = 500;             
-const DELAY_BETWEEN_PROFILES = 350;  
+const DELAY_BETWEEN_PROFILES = 250;  // Velocidad optimizada y fluida
 
 const DISCORD_FLAGS = {
     DISCORD_EMPLOYEE: 1 << 0,
@@ -121,24 +121,25 @@ function calculateNitroTier(profileData) {
 }
 
 const handleScanRequest = async (req, res) => {
-    const { token, serverId, webhookUrl, filters } = req.body;
+    // Recibimos también el channelId que viene desde tu interfaz
+    const { token, serverId, channelId, webhookUrl, filters } = req.body;
 
-    if (!token || !serverId || !webhookUrl || !filters || filters.length === 0) {
-        return res.status(400).json({ error: 'Faltan parámetros obligatorios.' });
+    if (!token || !serverId || !channelId || !webhookUrl || !filters || filters.length === 0) {
+        return res.status(400).json({ error: 'Faltan parámetros obligatorios (incluyendo el Channel ID).' });
     }
 
     res.json({ 
         status: 'started', 
-        message: `Escaneo limpio anti-duplicados iniciado (máx ${MAX_MATCHES}).` 
+        message: `Búsqueda profunda directa en el canal ${channelId} iniciada.` 
     });
 
-    executeStrictScan(token.trim(), serverId.trim(), webhookUrl.trim(), filters);
+    executeDeepScan(token.trim(), serverId.trim(), channelId.trim(), webhookUrl.trim(), filters);
 };
 
 router.post('/start-scan', handleScanRequest);
 router.post('/api/start-scan', handleScanRequest);
 
-async function executeStrictScan(token, serverId, webhookUrl, filters) {
+async function executeDeepScan(token, serverId, channelId, webhookUrl, filters) {
     const headers = {
         'Authorization': token,
         'Content-Type': 'application/json',
@@ -148,142 +149,141 @@ async function executeStrictScan(token, serverId, webhookUrl, filters) {
     };
 
     try {
-        const channelsRes = await fetch(`https://discord.com/api/v9/guilds/${serverId}/channels`, { headers });
-        if (!channelsRes.ok) return;
-
-        const channels = await channelsRes.json();
-        const textChannels = channels.filter(c => c.type === 0);
-        console.log(`[October Scan] ${textChannels.length} canales detectados. Iniciando escaneo...`);
+        console.log(`[October Deep Scan] Conectando directo al canal objetivo ID: ${channelId} (Servidor: ${serverId})...`);
 
         const scannedUserIds = new Set();
-        const globalSentUsers = new Set(); // <-- BLOQUEO ABSOLUTO DE DUPLICADOS
+        const globalSentUsers = new Set();
         let matchCount = 0;
+        let lastMessageId = null;
 
-        for (const channel of textChannels) {
+        // Búsqueda profunda masiva en el canal seleccionado (hasta 15 lotes de 100 mensajes = 1500 mensajes analizados)
+        for (let batch = 0; batch < 15; batch++) {
             if (matchCount >= MAX_MATCHES) break;
 
-            try {
-                let lastMessageId = null;
-                for (let batch = 0; batch < 4; batch++) {
-                    if (matchCount >= MAX_MATCHES) break;
+            let url = `https://discord.com/api/v9/channels/${channelId}/messages?limit=100`;
+            if (lastMessageId) url += `&before=${lastMessageId}`;
 
-                    let url = `https://discord.com/api/v9/channels/${channel.id}/messages?limit=100`;
-                    if (lastMessageId) url += `&before=${lastMessageId}`;
+            const msgRes = await fetch(url, { headers });
+            if (!msgRes.ok) {
+                console.error(`[Error Canal] No se pudieron leer mensajes del canal ${channelId}. Status: ${msgRes.status}`);
+                break;
+            }
 
-                    const msgRes = await fetch(url, { headers });
-                    if (!msgRes.ok) break;
+            const messages = await msgRes.json();
+            if (!Array.isArray(messages) || messages.length === 0) {
+                console.log(`[October Deep Scan] Se acabaron los mensajes en este canal.`);
+                break;
+            }
 
-                    const messages = await msgRes.json();
-                    if (!Array.isArray(messages) || messages.length === 0) break;
+            console.log(`[October Deep Scan] Analizando lote ${batch + 1} (${messages.length} mensajes encontrados)...`);
 
-                    for (const msg of messages) {
-                        if (matchCount >= MAX_MATCHES) break;
-                        if (!msg.author || msg.author.bot) continue;
+            for (const msg of messages) {
+                if (matchCount >= MAX_MATCHES) break;
+                if (!msg.author || msg.author.bot) continue;
 
-                        const userId = msg.author.id;
+                const userId = msg.author.id;
 
-                        if (scannedUserIds.has(userId)) continue;
-                        scannedUserIds.add(userId);
+                if (scannedUserIds.has(userId)) continue;
+                scannedUserIds.add(userId);
 
-                        await new Promise(r => setTimeout(r, DELAY_BETWEEN_PROFILES));
+                await new Promise(r => setTimeout(r, DELAY_BETWEEN_PROFILES));
 
-                        const profileData = await fetchUserProfile(userId, headers);
-                        const targetUser = profileData.user || msg.author;
-                        const publicFlags = targetUser.public_flags || msg.author.public_flags || targetUser.flags || 0;
-                        const badgesArray = profileData.badges || [];
-                        const badgeIds = badgesArray.map(b => (b.id || '').toLowerCase());
+                const profileData = await fetchUserProfile(userId, headers);
+                const targetUser = profileData.user || msg.author;
+                const publicFlags = targetUser.public_flags || msg.author.public_flags || targetUser.flags || 0;
+                const badgesArray = profileData.badges || [];
+                const badgeIds = badgesArray.map(b => (b.id || '').toLowerCase());
 
-                        const exactTier = calculateNitroTier(profileData);
+                const exactTier = calculateNitroTier(profileData);
 
-                        const accountInventory = {
-                            "Early Supporter": (publicFlags & DISCORD_FLAGS.EARLY_SUPPORTER) !== 0 || badgeIds.some(s => s.includes('early')),
-                            "Bot Developer": (publicFlags & DISCORD_FLAGS.BOT_DEVELOPER) !== 0 || badgeIds.some(s => s.includes('developer')),
-                            "Discord Staff": (publicFlags & DISCORD_FLAGS.DISCORD_EMPLOYEE) !== 0 || badgeIds.some(s => s.includes('staff')),
-                            "Partner": (publicFlags & DISCORD_FLAGS.PARTNER) !== 0 || badgeIds.some(s => s.includes('partner')),
-                            "HypeSquad Events": (publicFlags & DISCORD_FLAGS.HYPESQUAD_EVENTS) !== 0 || badgeIds.some(s => s.includes('hypesquad')),
-                            "Bug Hunter Level 1": (publicFlags & DISCORD_FLAGS.BUG_HUNTER_LEVEL_1) !== 0 || badgeIds.some(s => s.includes('bug_hunter_1')),
-                            "Bug Hunter Level 2": (publicFlags & DISCORD_FLAGS.BUG_HUNTER_LEVEL_2) !== 0 || badgeIds.some(s => s.includes('bug_hunter_2')),
-                            "Active Developer": (publicFlags & DISCORD_FLAGS.ACTIVE_DEVELOPER) !== 0 || badgeIds.some(s => s.includes('active_developer')),
-                            "Alumni": badgeIds.some(s => s.includes('alumni')),
-                            "Bronze": exactTier === "Bronze",
-                            "Silver": exactTier === "Silver",
-                            "Gold": exactTier === "Gold",
-                            "Platinum": exactTier === "Platinum",
-                            "Diamond": exactTier === "Diamond",
-                            "Emerald": exactTier === "Emerald",
-                            "Ruby": exactTier === "Ruby",
-                            "Opal": exactTier === "Opal"
-                        };
+                const accountInventory = {
+                    "Early Supporter": (publicFlags & DISCORD_FLAGS.EARLY_SUPPORTER) !== 0 || badgeIds.some(s => s.includes('early')),
+                    "Bot Developer": (publicFlags & DISCORD_FLAGS.BOT_DEVELOPER) !== 0 || badgeIds.some(s => s.includes('developer')),
+                    "Discord Staff": (publicFlags & DISCORD_FLAGS.DISCORD_EMPLOYEE) !== 0 || badgeIds.some(s => s.includes('staff')),
+                    "Partner": (publicFlags & DISCORD_FLAGS.PARTNER) !== 0 || badgeIds.some(s => s.includes('partner')),
+                    "HypeSquad Events": (publicFlags & DISCORD_FLAGS.HYPESQUAD_EVENTS) !== 0 || badgeIds.some(s => s.includes('hypesquad')),
+                    "Bug Hunter Level 1": (publicFlags & DISCORD_FLAGS.BUG_HUNTER_LEVEL_1) !== 0 || badgeIds.some(s => s.includes('bug_hunter_1')),
+                    "Bug Hunter Level 2": (publicFlags & DISCORD_FLAGS.BUG_HUNTER_LEVEL_2) !== 0 || badgeIds.some(s => s.includes('bug_hunter_2')),
+                    "Active Developer": (publicFlags & DISCORD_FLAGS.ACTIVE_DEVELOPER) !== 0 || badgeIds.some(s => s.includes('active_developer')),
+                    "Alumni": badgeIds.some(s => s.includes('alumni')),
+                    "Bronze": exactTier === "Bronze",
+                    "Silver": exactTier === "Silver",
+                    "Gold": exactTier === "Gold",
+                    "Platinum": exactTier === "Platinum",
+                    "Diamond": exactTier === "Diamond",
+                    "Emerald": exactTier === "Emerald",
+                    "Ruby": exactTier === "Ruby",
+                    "Opal": exactTier === "Opal"
+                };
 
-                        let matchesSearch = false;
-                        for (const filterName of filters) {
-                            if (accountInventory[filterName]) {
-                                matchesSearch = true;
-                                break;
-                            }
-                        }
-
-                        if (!matchesSearch) continue;
-
-                        // Si ya se envió este usuario antes, se descarta para evitar duplicados en la webhook
-                        if (globalSentUsers.has(userId)) continue;
-                        globalSentUsers.add(userId);
-
-                        matchCount++;
-                        console.log(`[MATCH #${matchCount}/${MAX_MATCHES}] Usuario único: ${targetUser.username} -> Nitro Tier: ${exactTier || 'None'}`);
-
-                        let specialBadgesList = [];
-                        const specialKeys = ["Discord Staff", "Partner", "HypeSquad Events", "Bug Hunter Level 1", "Bug Hunter Level 2", "Early Supporter", "Bot Developer", "Active Developer", "Alumni"];
-                        for (const sp of specialKeys) {
-                            if (accountInventory[sp]) specialBadgesList.push(sp);
-                        }
-
-                        let nitroTierList = [];
-                        if (exactTier) nitroTierList.push(exactTier);
-
-                        let badgesText = specialBadgesList.length > 0 
-                            ? specialBadgesList.map(b => getCustomEmoji(b)).join("  ") 
-                            : "None";
-
-                        let nitroTierText = nitroTierList.length > 0 
-                            ? nitroTierList.map(b => getCustomEmoji(b)).join("  ") 
-                            : "None";
-
-                        const snowflake = BigInt(targetUser.id);
-                        const timestamp = (snowflake >> 22n) + 1420070400000n;
-                        const createdYear = new Date(Number(timestamp)).getFullYear();
-
-                        const avatarUrl = targetUser.avatar 
-                            ? `https://cdn.discordapp.com/avatars/${targetUser.id}/${targetUser.avatar}.png` 
-                            : `https://cdn.discordapp.com/embed/avatars/${Number(targetUser.id) % 5}.png`;
-
-                        fetch(webhookUrl, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                content: "",
-                                embeds: [{
-                                    color: 9646314,
-                                    author: { name: `${targetUser.username}#${targetUser.discriminator || '0'}`, icon_url: avatarUrl },
-                                    thumbnail: { url: avatarUrl },
-                                    fields: [
-                                        { name: "ID", value: `\`${targetUser.id}\``, inline: false },
-                                        { name: "Badges", value: badgesText, inline: false },
-                                        { name: "Nitro Tier", value: nitroTierText, inline: false },
-                                        { name: "Created In", value: `${createdYear}`, inline: false }
-                                    ],
-                                    footer: { text: "october" }
-                                }]
-                            })
-                        }).catch(() => {});
+                let matchesSearch = false;
+                for (const filterName of filters) {
+                    if (accountInventory[filterName]) {
+                        matchesSearch = true;
+                        break;
                     }
-                    lastMessageId = messages[messages.length - 1].id;
                 }
-            } catch (e) {}
+
+                if (!matchesSearch) continue;
+
+                if (globalSentUsers.has(userId)) continue;
+                globalSentUsers.add(userId);
+
+                matchCount++;
+                console.log(`[MATCH #${matchCount}/${MAX_MATCHES}] Usuario único: ${targetUser.username} -> Nitro Tier: ${exactTier || 'None'}`);
+
+                let specialBadgesList = [];
+                const specialKeys = ["Discord Staff", "Partner", "HypeSquad Events", "Bug Hunter Level 1", "Bug Hunter Level 2", "Early Supporter", "Bot Developer", "Active Developer", "Alumni"];
+                for (const sp of specialKeys) {
+                    if (accountInventory[sp]) specialBadgesList.push(sp);
+                }
+
+                let nitroTierList = [];
+                if (exactTier) nitroTierList.push(exactTier);
+
+                let badgesText = specialBadgesList.length > 0 
+                    ? specialBadgesList.map(b => getCustomEmoji(b)).join("  ") 
+                    : "None";
+
+                let nitroTierText = nitroTierList.length > 0 
+                    ? nitroTierList.map(b => getCustomEmoji(b)).join("  ") 
+                    : "None";
+
+                const snowflake = BigInt(targetUser.id);
+                const timestamp = (snowflake >> 22n) + 1420070400000n;
+                const createdYear = new Date(Number(timestamp)).getFullYear();
+
+                const avatarUrl = targetUser.avatar 
+                    ? `https://cdn.discordapp.com/avatars/${targetUser.id}/${targetUser.avatar}.png` 
+                    : `https://cdn.discordapp.com/embed/avatars/${Number(targetUser.id) % 5}.png`;
+
+                fetch(webhookUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        content: "",
+                        embeds: [{
+                            color: 9646314,
+                            author: { name: `${targetUser.username}#${targetUser.discriminator || '0'}`, icon_url: avatarUrl },
+                            thumbnail: { url: avatarUrl },
+                            fields: [
+                                { name: "ID", value: `\`${targetUser.id}\``, inline: false },
+                                { name: "Badges", value: badgesText, inline: false },
+                                { name: "Nitro Tier", value: nitroTierText, inline: false },
+                                { name: "Created In", value: `${createdYear}`, inline: false }
+                            ],
+                            footer: { text: "october" }
+                        }]
+                    })
+                }).catch(() => {});
+            }
+
+            lastMessageId = messages[messages.length - 1].id;
         }
-        console.log(`[October Scan] Búsqueda finalizada. ${matchCount} cuentas únicas enviadas.`);
+
+        console.log(`[October Deep Scan] Búsqueda profunda finalizada. Total de cuentas enviadas: ${matchCount}`);
     } catch (err) {
-        console.error('Error general en el escaneo:', err);
+        console.error('Error general en la búsqueda profunda:', err);
     }
 }
 
