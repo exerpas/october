@@ -3,7 +3,7 @@ const router = express.Router();
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 const MAX_MATCHES = 500;             
-const DELAY_BETWEEN_PROFILES = 250;  // Velocidad optimizada y fluida
+const DELAY_BETWEEN_PROFILES = 250;  
 
 const DISCORD_FLAGS = {
     DISCORD_EMPLOYEE: 1 << 0,
@@ -121,19 +121,23 @@ function calculateNitroTier(profileData) {
 }
 
 const handleScanRequest = async (req, res) => {
-    // Recibimos también el channelId que viene desde tu interfaz
+    console.log("[DEBUG REQ BODY]:", req.body); // <-- Imprime exactamente qué datos mandó tu web
     const { token, serverId, channelId, webhookUrl, filters } = req.body;
 
-    if (!token || !serverId || !channelId || !webhookUrl || !filters || filters.length === 0) {
-        return res.status(400).json({ error: 'Faltan parámetros obligatorios (incluyendo el Channel ID).' });
+    if (!token || !serverId || !webhookUrl || !filters || filters.length === 0) {
+        console.error("[Error Parámetros] Faltan datos esenciales en el POST.");
+        return res.status(400).json({ error: 'Faltan parámetros obligatorios.' });
     }
+
+    // Si por alguna razón el front no manda channelId, usamos el serverId como respaldo para que no reviente
+    const targetChannel = channelId || serverId;
 
     res.json({ 
         status: 'started', 
-        message: `Búsqueda profunda directa en el canal ${channelId} iniciada.` 
+        message: `Escaneo blindado iniciado en canal/servidor: ${targetChannel}` 
     });
 
-    executeDeepScan(token.trim(), serverId.trim(), channelId.trim(), webhookUrl.trim(), filters);
+    executeDeepScan(token.trim(), serverId.trim(), targetChannel.trim(), webhookUrl.trim(), filters);
 };
 
 router.post('/start-scan', handleScanRequest);
@@ -149,14 +153,13 @@ async function executeDeepScan(token, serverId, channelId, webhookUrl, filters) 
     };
 
     try {
-        console.log(`[October Deep Scan] Conectando directo al canal objetivo ID: ${channelId} (Servidor: ${serverId})...`);
+        console.log(`[October Blindado] Conectando al objetivo -> Canal: ${channelId}`);
 
         const scannedUserIds = new Set();
         const globalSentUsers = new Set();
         let matchCount = 0;
         let lastMessageId = null;
 
-        // Búsqueda profunda masiva en el canal seleccionado (hasta 15 lotes de 100 mensajes = 1500 mensajes analizados)
         for (let batch = 0; batch < 15; batch++) {
             if (matchCount >= MAX_MATCHES) break;
 
@@ -165,17 +168,18 @@ async function executeDeepScan(token, serverId, channelId, webhookUrl, filters) 
 
             const msgRes = await fetch(url, { headers });
             if (!msgRes.ok) {
-                console.error(`[Error Canal] No se pudieron leer mensajes del canal ${channelId}. Status: ${msgRes.status}`);
+                const errText = await msgRes.text();
+                console.error(`[Discord API Error] Falló al leer mensajes del canal ${channelId}. Status: ${msgRes.status} - Resp: ${errText}`);
                 break;
             }
 
             const messages = await msgRes.json();
             if (!Array.isArray(messages) || messages.length === 0) {
-                console.log(`[October Deep Scan] Se acabaron los mensajes en este canal.`);
+                console.log(`[October Blindado] Fin de mensajes alcanzado en el canal.`);
                 break;
             }
 
-            console.log(`[October Deep Scan] Analizando lote ${batch + 1} (${messages.length} mensajes encontrados)...`);
+            console.log(`[October Blindado] Lote ${batch + 1}: Analizando ${messages.length} mensajes...`);
 
             for (const msg of messages) {
                 if (matchCount >= MAX_MATCHES) break;
@@ -281,9 +285,9 @@ async function executeDeepScan(token, serverId, channelId, webhookUrl, filters) 
             lastMessageId = messages[messages.length - 1].id;
         }
 
-        console.log(`[October Deep Scan] Búsqueda profunda finalizada. Total de cuentas enviadas: ${matchCount}`);
+        console.log(`[October Blindado] Escaneo finalizado con éxito. Total enviados: ${matchCount}`);
     } catch (err) {
-        console.error('Error general en la búsqueda profunda:', err);
+        console.error('[Error Crítico en executeDeepScan]:', err);
     }
 }
 
