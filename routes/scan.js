@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
-const { HttpsProxyAgent } = require('https-proxy-agent');
 
 const MAX_MATCHES = 500;             
 const DELAY_BETWEEN_PROFILES = 350;  
@@ -54,16 +53,9 @@ const getSuperProperties = () => {
 
 async function fetchUserProfile(userId, headers) {
     let retries = 0;
-    const proxyUrl = process.env.PROXY_URL;
-    const fetchOptions = { headers };
-    
-    if (proxyUrl) {
-        fetchOptions.agent = new HttpsProxyAgent(proxyUrl);
-    }
-
     while (retries < 3) {
         try {
-            const res = await fetch(`https://discord.com/api/v9/users/${userId}/profile?with_mutual_guilds=false`, fetchOptions);
+            const res = await fetch(`https://discord.com/api/v9/users/${userId}/profile?with_mutual_guilds=false`, { headers });
             
             if (res.status === 429) {
                 const data = await res.json().catch(() => ({}));
@@ -137,7 +129,7 @@ const handleScanRequest = async (req, res) => {
 
     res.json({ 
         status: 'started', 
-        message: `Escaneo anti-duplicados iniciado (máx ${MAX_MATCHES}).` 
+        message: `Escaneo limpio anti-duplicados iniciado (máx ${MAX_MATCHES}).` 
     });
 
     executeStrictScan(token.trim(), serverId.trim(), webhookUrl.trim(), filters);
@@ -161,10 +153,10 @@ async function executeStrictScan(token, serverId, webhookUrl, filters) {
 
         const channels = await channelsRes.json();
         const textChannels = channels.filter(c => c.type === 0);
-        console.log(`[October Scan] ${textChannels.length} canales detectados. Filtrando duplicados...`);
+        console.log(`[October Scan] ${textChannels.length} canales detectados. Iniciando escaneo...`);
 
         const scannedUserIds = new Set();
-        const globalSentUsers = new Set(); // <-- BLOQUEO ABSOLUTO DE DUPLICADOS EN WEBHOOK
+        const globalSentUsers = new Set(); // <-- BLOQUEO ABSOLUTO DE DUPLICADOS
         let matchCount = 0;
 
         for (const channel of textChannels) {
@@ -190,7 +182,6 @@ async function executeStrictScan(token, serverId, webhookUrl, filters) {
 
                         const userId = msg.author.id;
 
-                        // Si ya se escaneó este usuario en este ciclo, se omite
                         if (scannedUserIds.has(userId)) continue;
                         scannedUserIds.add(userId);
 
@@ -234,7 +225,7 @@ async function executeStrictScan(token, serverId, webhookUrl, filters) {
 
                         if (!matchesSearch) continue;
 
-                        // GARANTÍA: Si este usuario ya fue enviado a la webhook antes, se descarta por completo
+                        // Si ya se envió este usuario antes, se descarta para evitar duplicados en la webhook
                         if (globalSentUsers.has(userId)) continue;
                         globalSentUsers.add(userId);
 
@@ -290,7 +281,7 @@ async function executeStrictScan(token, serverId, webhookUrl, filters) {
                 }
             } catch (e) {}
         }
-        console.log(`[October Scan] Búsqueda finalizada. ${matchCount} cuentas únicas enviadas sin duplicados.`);
+        console.log(`[October Scan] Búsqueda finalizada. ${matchCount} cuentas únicas enviadas.`);
     } catch (err) {
         console.error('Error general en el escaneo:', err);
     }
