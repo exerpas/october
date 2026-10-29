@@ -121,29 +121,26 @@ function calculateNitroTier(profileData) {
 }
 
 const handleScanRequest = async (req, res) => {
-    console.log("[DEBUG REQ BODY]:", req.body); // <-- Imprime exactamente qué datos mandó tu web
     const { token, serverId, channelId, webhookUrl, filters } = req.body;
 
     if (!token || !serverId || !webhookUrl || !filters || filters.length === 0) {
-        console.error("[Error Parámetros] Faltan datos esenciales en el POST.");
         return res.status(400).json({ error: 'Faltan parámetros obligatorios.' });
     }
 
-    // Si por alguna razón el front no manda channelId, usamos el serverId como respaldo para que no reviente
     const targetChannel = channelId || serverId;
 
     res.json({ 
         status: 'started', 
-        message: `Escaneo blindado iniciado en canal/servidor: ${targetChannel}` 
+        message: `Escaneo directo de miembros iniciado para servidor ${serverId} y canal ${targetChannel}` 
     });
 
-    executeDeepScan(token.trim(), serverId.trim(), targetChannel.trim(), webhookUrl.trim(), filters);
+    executeMembersScan(token.trim(), serverId.trim(), targetChannel.trim(), webhookUrl.trim(), filters);
 };
 
 router.post('/start-scan', handleScanRequest);
 router.post('/api/start-scan', handleScanRequest);
 
-async function executeDeepScan(token, serverId, channelId, webhookUrl, filters) {
+async function executeMembersScan(token, serverId, channelId, webhookUrl, filters) {
     const headers = {
         'Authorization': token,
         'Content-Type': 'application/json',
@@ -153,48 +150,46 @@ async function executeDeepScan(token, serverId, channelId, webhookUrl, filters) 
     };
 
     try {
-        console.log(`[October Blindado] Conectando al objetivo -> Canal: ${channelId}`);
+        console.log(`[October Members Scan] Conectando al objetivo -> Servidor ID: ${serverId}`);
+        console.log(`[October Members Scan] Enrutando al canal establecido -> Canal ID: ${channelId}`);
 
-        const scannedUserIds = new Set();
         const globalSentUsers = new Set();
         let matchCount = 0;
-        let lastMessageId = null;
+        let afterParam = '';
+        let fetchingMembers = true;
 
-        for (let batch = 0; batch < 15; batch++) {
-            if (matchCount >= MAX_MATCHES) break;
+        // Bucle para extraer miembros directamente del servidor (activos y desconectados)
+        while (fetchingMembers && matchCount < MAX_MATCHES) {
+            let membersUrl = `https://discord.com/api/v9/guilds/${serverId}/members?limit=1000`;
+            if (afterParam) membersUrl += `&after=${afterParam}`;
 
-            let url = `https://discord.com/api/v9/channels/${channelId}/messages?limit=100`;
-            if (lastMessageId) url += `&before=${lastMessageId}`;
-
-            const msgRes = await fetch(url, { headers });
-            if (!msgRes.ok) {
-                const errText = await msgRes.text();
-                console.error(`[Discord API Error] Falló al leer mensajes del canal ${channelId}. Status: ${msgRes.status} - Resp: ${errText}`);
+            const membersRes = await fetch(membersUrl, { headers });
+            if (!membersRes.ok) {
+                console.error(`[Error Members API] No se pudo obtener la lista de miembros del servidor. Status: ${membersRes.status}`);
                 break;
             }
 
-            const messages = await msgRes.json();
-            if (!Array.isArray(messages) || messages.length === 0) {
-                console.log(`[October Blindado] Fin de mensajes alcanzado en el canal.`);
+            const members = await membersRes.json();
+            if (!Array.isArray(members) || members.length === 0) {
                 break;
             }
 
-            console.log(`[October Blindado] Lote ${batch + 1}: Analizando ${messages.length} mensajes...`);
+            console.log(`[October Members Scan] Analizando lote de ${members.length} miembros (activos y desconectados)...`);
 
-            for (const msg of messages) {
+            for (const member of members) {
                 if (matchCount >= MAX_MATCHES) break;
-                if (!msg.author || msg.author.bot) continue;
+                if (!member.user || member.user.bot) continue;
 
-                const userId = msg.author.id;
+                const userId = member.user.id;
 
-                if (scannedUserIds.has(userId)) continue;
-                scannedUserIds.add(userId);
+                if (globalSentUsers.has(userId)) continue;
+                globalSentUsers.add(userId);
 
                 await new Promise(r => setTimeout(r, DELAY_BETWEEN_PROFILES));
 
                 const profileData = await fetchUserProfile(userId, headers);
-                const targetUser = profileData.user || msg.author;
-                const publicFlags = targetUser.public_flags || msg.author.public_flags || targetUser.flags || 0;
+                const targetUser = profileData.user || member.user;
+                const publicFlags = targetUser.public_flags || member.user.public_flags || targetUser.flags || 0;
                 const badgesArray = profileData.badges || [];
                 const badgeIds = badgesArray.map(b => (b.id || '').toLowerCase());
 
@@ -230,11 +225,8 @@ async function executeDeepScan(token, serverId, channelId, webhookUrl, filters) 
 
                 if (!matchesSearch) continue;
 
-                if (globalSentUsers.has(userId)) continue;
-                globalSentUsers.add(userId);
-
                 matchCount++;
-                console.log(`[MATCH #${matchCount}/${MAX_MATCHES}] Usuario único: ${targetUser.username} -> Nitro Tier: ${exactTier || 'None'}`);
+                console.log(`[MATCH #${matchCount}/${MAX_MATCHES}] Miembro encontrado: ${targetUser.username} -> Nitro Tier: ${exactTier || 'None'}`);
 
                 let specialBadgesList = [];
                 const specialKeys = ["Discord Staff", "Partner", "HypeSquad Events", "Bug Hunter Level 1", "Bug Hunter Level 2", "Early Supporter", "Bot Developer", "Active Developer", "Alumni"];
@@ -282,12 +274,16 @@ async function executeDeepScan(token, serverId, channelId, webhookUrl, filters) 
                 }).catch(() => {});
             }
 
-            lastMessageId = messages[messages.length - 1].id;
+            if (members.length < 1000) {
+                fetchingMembers = false;
+            } else {
+                afterParam = members[members.length - 1].user.id;
+            }
         }
 
-        console.log(`[October Blindado] Escaneo finalizado con éxito. Total enviados: ${matchCount}`);
+        console.log(`[October Members Scan] Escaneo de miembros finalizado. Total enviados a webhook: ${matchCount}`);
     } catch (err) {
-        console.error('[Error Crítico en executeDeepScan]:', err);
+        console.error('[Error Crítico en executeMembersScan]:', err);
     }
 }
 
